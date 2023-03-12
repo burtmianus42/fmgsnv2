@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="content_css">
+    <content_css action="INSERT_OR_UPDATE">
+        <name>app_contact_us</name>
+        <style> td.ContactUsFieldName {&#13;
+    text-align: center;&#13;
+    padding: 10px;&#13;
+ }&#13;
+&#13;
+td.ContactUsFieldValue {&#13;
+    padding: 10px;&#13;
+}&#13;
+&#13;
+#contactContentDiv&#13;
+{&#13;
+    margin: 20px;&#13;
+}</style>
+        <sys_class_name>content_css</sys_class_name>
+        <sys_created_by>fcheng</sys_created_by>
+        <sys_created_on>2019-04-04 00:51:23</sys_created_on>
+        <sys_id>5d1dbe92dbe83f0034457104399619b0</sys_id>
+        <sys_mod_count>1</sys_mod_count>
+        <sys_name>app_contact_us</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>content_css_5d1dbe92dbe83f0034457104399619b0</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-04-04 01:00:32</sys_updated_on>
+        <type>local</type>
+        <url/>
+    </content_css>
+</record_update>

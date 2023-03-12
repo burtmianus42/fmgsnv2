@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ws_operation">
+    <sys_ws_operation action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <consumes>application/json,application/xml,text/xml</consumes>
+        <consumes_customized>false</consumes_customized>
+        <default_operation_uri/>
+        <enforce_acl>69dc874edb466b00310473e1ba961920</enforce_acl>
+        <http_method>POST</http_method>
+        <name>api</name>
+        <operation_script><![CDATA[/* global gs request response UtilSrv NodeImpSet FMGAppResponse */
+
+(function process(/*RESTAPIRequest*/ request, /*RESTAPIResponse*/ response) {
+    function api_WriteResponse(response, data) {
+        response.setContentType('application/json');
+        response.setStatus(200);
+        response.getStreamWriter().writeString(data);
+    }
+
+    function api_CreateScript(data) {
+        var fmgAPI = new FMGApi();
+
+        // #0551547 ADOM selection should apply to application API
+        var adomList = gs.getProperty(currScopeName + '.fmg.adomlist') ? JSON.parse(gs.getProperty(currScopeName + '.fmg.adomlist')) : '';
+        if (adomList == "" || adomList.indexOf(data.adom) == -1) {
+            throw new Error('Invalid ADOM or ADOM list selection on script creation');
+        }
+
+        // Validate adom and script name
+        var scriptData = fmgAPI.FMGApi_GetScriptDataIfValid(data.adom, data.script);
+        if (scriptData === false) {
+            throw new Error('Invalid ADOM or script name');
+        }
+
+        // Validate script variables
+        var scriptContentConfiguredProgress = fmgAPI.FMGApi_ConvScriptContentIfValid(scriptData.content, data.scriptVars);
+        if (scriptContentConfiguredProgress === false) {
+            throw new Error('Invalid script variables');
+        }
+
+        // Validate devices or policy (depends on the script type)
+        switch (scriptData.target) {
+            case 'adom_database':
+                // Validate policy
+                if (fmgAPI.FMGApi_IsValidPolicy(data.adom, data.policy) !== true) {
+                    throw new Error('Invalid policy name');
+                }
+                break;
+            case 'device_database':
+            case 'remote_device':
+                // Validate devices
+                if (fmgAPI.FMGApi_IsValidDevices(data.adom, data.devices) !== true) {
+                    throw new Error('At least one of the devices is invalid');
+                }
+                break;
+            default:
+                throw new Error('Invalid script type: ' + scriptData.target);
+        }
+
+        // Init obj
+        var convRequestObj = {
+            u_adom: '',
+            u_script_name: '',
+            u_script_type: '',
+            u_description: '',
+            u_device_list: '',
+            u_installation_device: '',
+            u_is_submitted: 1,
+            u_policy_package: '',
+            u_policy_package_list: '',
+            u_script_content: '',
+            u_script_content_configured: '',
+            u_script_conte_gured_progress: '',
+            u_script_index_selected: '',
+            u_script_list: '',
+        };
+
+        // Set data
+        convRequestObj.u_adom = data.adom;
+        convRequestObj.u_script_name = data.script;
+        convRequestObj.u_script_type = scriptData.target;
+        convRequestObj.u_description = data.description;
+        convRequestObj.u_script_content = gs.base64Encode(scriptData.content);
+        convRequestObj.u_script_content_configured = gs.base64Encode(fmgAPI.FMGApi_ReplaceScriptVars(scriptData.content, scriptContentConfiguredProgress));
+        convRequestObj.u_script_conte_gured_progress = gs.base64Encode(JSON.stringify(scriptContentConfiguredProgress));
+        convRequestObj.u_policy_package = data.policy;
+        convRequestObj.u_installation_device = JSON.stringify(data.devices);
+
+        // Save data through Import Set Web API
+        var responseObj = fmgAppResponse.getDefaultResponseObj();
+        var impSetResponseObj = nodeImpSet.SendImpSetRESTRequest(convRequestObj);
+        responseObj.httpStatus = impSetResponseObj.result[0].data.httpStatus;
+
+        // Check if Import Set Request has issues
+        if (impSetResponseObj.result[0].status.code !== 0) {
+            throw new Error(impSetResponseObj.result[0].status.message);
+        }
+
+        responseObj.bodyObj = impSetResponseObj.result[0].data.bodyObj;
+        return responseObj;
+    }
+
+    function api_CheckExec(data) {
+        var gr = node.GetRecord(currScopeName + '_fmg_script', {
+            'where': {
+                'number': data.number,
+            },
+        });
+
+        if (gr === null) {
+            throw new Error('node.GetRecord() failed');
+        }
+
+        var responseObj = {
+            data: {},
+        };
+
+        responseObj.data = {
+            adom: gr.getValue('adom'),
+            number: gr.getValue('number'),
+            sys_updated_on: gr.getValue('sys_updated_on'),
+            exec_script_task_id: gr.getValue('exec_script_task_id'),
+            exec_script_status: gr.getValue('exec_script_status'),
+            exec_script_percent: gr.getValue('exec_script_percent'),
+        };
+
+        return responseObj;
+    }
+
+    function api_CheckDeploy(data) {
+        var gr = node.GetRecord(currScopeName + '_fmg_script', {
+            'where': {
+                'number': data.number,
+            },
+        });
+
+        if (gr === null) {
+            throw new Error('node.GetRecord() failed');
+        }
+
+        var responseObj = {
+            data: {},
+        };
+
+        responseObj.data = {
+            adom: gr.getValue('adom'),
+            number: gr.getValue('number'),
+            sys_updated_on: gr.getValue('sys_updated_on'),
+            deploy_task_id: gr.getValue('deploy_task_id'),
+            deploy_status: gr.getValue('deploy_status'),
+            deploy_percent: gr.getValue('deploy_percent'),
+        };
+
+        return responseObj;
+    }
+
+    // Important variable (must be placed at top)
+    var currScopeName = gs.getCurrentScopeName();
+
+    // Initialize
+    var utilSrv = new UtilSrv();
+    var fmgAppResponse = new FMGAppResponse();
+    var nodeImpSet = new NodeImpSet();
+    var node = new Node();
+    var statusObj = fmgAppResponse.STATUS_INIT;
+    var requestObj = request.body.data;
+    var responseObj = {};
+
+    APIMain: try {
+        // Check role
+        if (gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+            throw new Error('Insufficient permission to access the resources');
+        }
+
+        // Check if request body contains the required field
+        if (!('method' in requestObj)) {
+            throw new Error('requestObj.method is undefined');
+        }
+
+        if (!('params' in requestObj)) {
+            throw new Error('requestObj.params is undefined');
+        }
+
+        if (!('0' in requestObj.params)) {
+            throw new Error('requestObj.params[0] is undefined');
+        }
+
+        if (!('url' in requestObj.params[0])) {
+            throw new Error('requestObj.params[0].url is undefined');
+        }
+
+        if ('number' in requestObj.params[0]) {
+            if (
+                !(requestObj.params[0].number.length > 3)
+                || /^SID[0-9]+$/.test(requestObj.params[0].number) !== true
+            ) {
+                throw new Error('requestObj.params[0].number is invalid');
+            }
+        }
+
+        // Determine action
+        switch (requestObj.params[0].url) {
+            case 'CreateScript':
+                responseObj = api_CreateScript(requestObj.params[0]);
+                break;
+            case 'CheckExec':
+                responseObj = api_CheckExec(requestObj.params[0]);
+                break;
+            case 'CheckDeploy':
+                responseObj = api_CheckDeploy(requestObj.params[0]);
+                break;
+            default:
+                throw new Error('Invalid FMG API url');
+        }
+
+        statusObj = fmgAppResponse.STATUS_OK;
+    } catch (ex) {
+        var exObj = utilSrv.GetAndLogExceptionObj(ex);
+        statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+    }
+
+    // TODO: first parameter is for ID. We haven't used it yet.
+    //fmgAppResponse.setData('0', request.uri, statusObj, responseObj);
+    //api_WriteResponse(response, fmgAppResponse.getDataString());
+
+    responseObj.status = statusObj;
+    api_WriteResponse(response, JSON.stringify(responseObj));
+    return;
+})(request, response);]]></operation_script>
+        <operation_uri>/api/x_forti_fmgintgv2/fmg/api</operation_uri>
+        <produces>application/json,application/xml,text/xml</produces>
+        <produces_customized>false</produces_customized>
+        <relative_path>/api</relative_path>
+        <request_example/>
+        <requires_acl_authorization>true</requires_acl_authorization>
+        <requires_authentication>true</requires_authentication>
+        <requires_snc_internal_role>true</requires_snc_internal_role>
+        <short_description/>
+        <sys_class_name>sys_ws_operation</sys_class_name>
+        <sys_created_by>jhsieh</sys_created_by>
+        <sys_created_on>2018-12-27 21:47:39</sys_created_on>
+        <sys_id>26ef6a0fdbaa6f00310473e1ba96195f</sys_id>
+        <sys_mod_count>66</sys_mod_count>
+        <sys_name>api</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_ws_operation_26ef6a0fdbaa6f00310473e1ba96195f</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-04-15 23:48:08</sys_updated_on>
+        <web_service_definition display_value="fmg">121c8f0edb466b00310473e1ba961903</web_service_definition>
+        <web_service_version/>
+    </sys_ws_operation>
+</record_update>

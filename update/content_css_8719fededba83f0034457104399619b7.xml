@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="content_css">
+    <content_css action="INSERT_OR_UPDATE">
+        <name>app_sys_prop</name>
+        <style>#versionSpan {&#13;
+    font-size: 12px;&#13;
+    float:right;&#13;
+}&#13;
+&#13;
+.appSysProp_colLabel {&#13;
+    text-align: right;&#13;
+    margin-right: 0.4em;&#13;
+}&#13;
+&#13;
+h2.appSysProp_sectionHeader {&#13;
+    margin: 1em 0em;&#13;
+}&#13;
+&#13;
+.ivu-tooltip-inner {&#13;
+    max-width: 400px!important;&#13;
+}</style>
+        <sys_class_name>content_css</sys_class_name>
+        <sys_created_by>fcheng</sys_created_by>
+        <sys_created_on>2019-04-04 00:33:59</sys_created_on>
+        <sys_id>8719fededba83f0034457104399619b7</sys_id>
+        <sys_mod_count>3</sys_mod_count>
+        <sys_name>app_sys_prop</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>content_css_8719fededba83f0034457104399619b7</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-04-12 21:18:04</sys_updated_on>
+        <type>local</type>
+        <url/>
+    </content_css>
+</record_update>
