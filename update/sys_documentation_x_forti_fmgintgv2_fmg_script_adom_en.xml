@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_documentation element="adom" label="Adom" language="en" table="x_forti_fmgintgv2_fmg_script">
+        <sys_documentation action="INSERT_OR_UPDATE">
+            <element>adom</element>
+            <help/>
+            <hint/>
+            <label>Adom</label>
+            <language>en</language>
+            <name>x_forti_fmgintgv2_fmg_script</name>
+            <plural>Adoms</plural>
+            <sys_class_name>sys_documentation</sys_class_name>
+            <sys_created_by>jxiang</sys_created_by>
+            <sys_created_on>2018-11-23 18:49:58</sys_created_on>
+            <sys_id>6d224f80db826700310473e1ba961970</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>Adom</sys_name>
+            <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+            <sys_update_name>sys_documentation_x_forti_fmgintgv2_fmg_script_adom_en</sys_update_name>
+            <sys_updated_by>jxiang</sys_updated_by>
+            <sys_updated_on>2018-11-23 18:49:58</sys_updated_on>
+            <url/>
+            <url_target/>
+        </sys_documentation>
+    </sys_documentation>
+</record_update>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_documentation element="sch_adom_status" label="Sch adom status" language="en" table="x_forti_fmgintgv2_fmg_script">
+        <sys_documentation action="INSERT_OR_UPDATE">
+            <element>sch_adom_status</element>
+            <help/>
+            <hint/>
+            <label>Sch adom status</label>
+            <language>en</language>
+            <name>x_forti_fmgintgv2_fmg_script</name>
+            <plural>Sch adom status</plural>
+            <sys_class_name>sys_documentation</sys_class_name>
+            <sys_created_by>fcheng</sys_created_by>
+            <sys_created_on>2019-04-13 00:03:14</sys_created_on>
+            <sys_id>1368c951db387700310473e1ba961965</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>Sch adom status</sys_name>
+            <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+            <sys_update_name>sys_documentation_x_forti_fmgintgv2_fmg_script_sch_adom_status_en</sys_update_name>
+            <sys_updated_by>fcheng</sys_updated_by>
+            <sys_updated_on>2019-04-13 00:03:14</sys_updated_on>
+            <url/>
+            <url_target/>
+        </sys_documentation>
+    </sys_documentation>
+</record_update>
