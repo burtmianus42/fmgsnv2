@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_security_acl">
+    <sys_security_acl action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <admin_overrides>true</admin_overrides>
+        <advanced>false</advanced>
+        <condition/>
+        <description/>
+        <name>x_forti_fmgintgv2_app_contact_us</name>
+        <operation display_value="read">read</operation>
+        <script/>
+        <sys_class_name>sys_security_acl</sys_class_name>
+        <sys_created_by>jhsieh</sys_created_by>
+        <sys_created_on>2018-12-31 23:50:31</sys_created_on>
+        <sys_id>9923f390db7a2340310473e1ba96194c</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>x_forti_fmgintgv2_app_contact_us</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_security_acl_9923f390db7a2340310473e1ba96194c</sys_update_name>
+        <sys_updated_by>jhsieh</sys_updated_by>
+        <sys_updated_on>2018-12-31 23:50:31</sys_updated_on>
+        <type display_value="ui_page">ui_page</type>
+    </sys_security_acl>
+</record_update>

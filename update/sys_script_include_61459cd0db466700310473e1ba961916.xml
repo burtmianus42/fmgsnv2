@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>package_private</access>
+        <active>true</active>
+        <api_name>x_forti_fmgintgv2.NodeImpSet</api_name>
+        <caller_access/>
+        <client_callable>false</client_callable>
+        <description/>
+        <name>NodeImpSet</name>
+        <script><![CDATA[/* global Class */
+/**
+ * NodeImpSet saves data through Import Set API.
+ */
+var NodeImpSet = Class.create();
+
+// NOTE: Method name starts with a underscore is a private method.
+NodeImpSet.prototype = {
+    initialize: function () {
+        // Reusable variables
+        this.utilSrv = new UtilSrv();
+        this.restApi = new RESTApi();
+        this.fmgAppResponse = new FMGAppResponse();
+        this.currScopeName = gs.getCurrentScopeName();
+    },
+    GetFMGScriptImpSetURL: function () {
+        return gs.getProperty('glide.servlet.uri') + 'api/now/import/x_forti_fmgintgv2_fmg_script_stage';
+    },
+    GetFMGJSONRPCCredential: function () {
+        return {
+            username: gs.getProperty(this.currScopeName + '.jsonrpc.username'),
+            password: gs.getProperty(this.currScopeName + '.jsonrpc.password'),
+        };
+    },
+    SendImpSetRESTRequest: function (requestObj) {
+
+        var statusObj = this.fmgAppResponse.STATUS_INIT;
+        var url = this.GetFMGScriptImpSetURL();
+
+        // NOTE: We only set the fields needed to be updated. Do NOT set the fields that do not need to be updated.
+        // var convRequestObj = {};
+
+        //
+        var responseObj = this.fmgAppResponse.getDefaultResponseObj();
+
+        try {
+            var fmgJSONRPCCredential = this.GetFMGJSONRPCCredential();
+
+            var impSetResponseObj = this.restApi.SendRESTRequest(this.restApi.BuildRESTRequestObj('post', url, requestObj, fmgJSONRPCCredential.username, fmgJSONRPCCredential.password));
+            responseObj.httpStatus = impSetResponseObj.result[0].data.httpStatus;
+
+            // TODO: need to figure it how whether we should check the fields of responseData (considering if it's always return from a standard format ???)
+
+            // Check if Import Set Request has issues
+            if (impSetResponseObj.result[0].status.code !== 0) {
+                throw new Error(impSetResponseObj.result[0].status.message);
+            }
+
+            // Check if Import Set Request has issues
+            var impSetResponseBodyObj = impSetResponseObj.result[0].data.bodyObj;
+
+            if (!('result' in impSetResponseBodyObj) || !('0' in impSetResponseBodyObj.result) || !('status' in impSetResponseBodyObj.result[0])) {
+                throw new Error('impSetResponseBodyObj.result[0].status is undefined');
+            }
+
+            if (!(['inserted', 'updated', 'ignored'].indexOf(impSetResponseBodyObj.result[0].status) > -1)) {
+                throw new Error('Unrecognized impSetResponseBodyObj.result[0].status: ' + impSetResponseBodyObj.result[0].status);
+            }
+
+            //
+            statusObj = this.fmgAppResponse.STATUS_OK;
+            responseObj.bodyObj = impSetResponseBodyObj.result[0];
+        } catch (ex) {
+            responseObj.httpStatus = this.fmgAppResponse.getDefaultHTTPStatusWhenException();
+
+            //
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        } finally {
+            // do something
+        }
+
+        // TODO: first parameter is for ID. We haven't used it yet.
+        this.fmgAppResponse.setData('0', url, statusObj, responseObj);
+        return this.fmgAppResponse.getData();
+    },
+    type: 'NodeImpSet',
+};]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-24 00:54:01</sys_created_on>
+        <sys_id>61459cd0db466700310473e1ba961916</sys_id>
+        <sys_mod_count>5</sys_mod_count>
+        <sys_name>NodeImpSet</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_script_include_61459cd0db466700310473e1ba961916</sys_update_name>
+        <sys_updated_by>jxiang</sys_updated_by>
+        <sys_updated_on>2018-12-05 00:08:34</sys_updated_on>
+    </sys_script_include>
+</record_update>

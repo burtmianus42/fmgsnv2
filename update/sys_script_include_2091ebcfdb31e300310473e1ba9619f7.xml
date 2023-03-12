@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>package_private</access>
+        <active>true</active>
+        <api_name>x_forti_fmgintgv2.Node</api_name>
+        <caller_access/>
+        <client_callable>false</client_callable>
+        <description/>
+        <name>Node</name>
+        <script><![CDATA[/* global Class gs GlideRecord GlideAggregate UtilSrv */
+/* jshint esnext: true */
+/**
+ * Node saves data directly to the table (instead of saving to import set table).
+ */
+var Node = Class.create();
+
+// NOTE: Method name starts with a underscore is a private method.
+Node.prototype = {
+    initialize: function () {
+        this.utilSrv = new UtilSrv();
+        this.currScopeName = gs.getCurrentScopeName();
+    },
+    SaveSysProp: function (propName, propVal, hasRoles) {
+
+        return this.Save('sys_properties', {
+            op: 'UPDATE',
+            hasRoles: hasRoles,
+            where: { name: propName },
+            set: { value: propVal },
+        });
+    },
+    /**
+     * Returns the result of the save opeartion.
+     * @param {string} tableName
+     * @param {object} optData
+     * @returns {boolean|string}
+     */
+    Save: function (tableName, optData) {
+        // Check op
+        if (!('op' in optData)) {
+            return false;
+        }
+
+        if (!(['INSERT', 'UPDATE'].indexOf(optData.op) > -1)) {
+            return false;
+        }
+
+        // Save record
+        var record = '';
+        // sys_properties is global, do not enforce SN ACL by instantiating GlideRecordSecure
+        if (tableName === 'sys_properties') {
+
+            // Since SN ACL not enforced, make manual checks
+            // Check role
+            if (!('hasRoles' in optData) || Array.isArray(optData.hasRoles) !== true || !(optData.hasRoles.length > 0)) {
+                return false;
+            }
+
+            // Determine canWrite
+            var canWrite = false;
+
+            for (var i = 0; i < optData.hasRoles.length; i++) {
+                if (optData.hasRoles[i] === 'sys_script' || gs.hasRole(optData.hasRoles[i]) === true) {
+                    canWrite = true;
+                    break;
+                }
+            }
+
+            if (canWrite !== true) {
+                return false;
+            }
+
+            record = new GlideRecord(tableName);
+        }
+        else {
+            record = new GlideRecordSecure(tableName);
+        }
+
+        if (optData.op === 'UPDATE') {
+            return this._update(record, optData);
+        } else if (optData.op === 'INSERT') {
+            return this._insert(record, optData);
+        }
+        
+        return false;
+    },
+    IsRecordExist: function (tableName, optData) {
+        if (!(this.GetRecord(tableName, optData))) {
+            return false;
+        }
+
+        return true;
+    },
+    GetRowCount: function (tableName) {
+        var rowCount = 0;
+
+        var gr = new GlideAggregate(tableName);
+        gr.addAggregate('COUNT');
+        gr.query();
+
+        if (gr.next() === true) {
+            rowCount = Number(gr.getAggregate('COUNT'));
+        }
+
+        return rowCount;
+    },
+    GetRecord: function (tableName, optData, itsm_creation) {
+        var gr = '';
+
+        if (itsm_creation) {
+            gr = new GlideRecord(tableName);
+        }
+        else {
+            gr = new GlideRecordSecure(tableName);
+        }
+
+        if (!('where' in optData)) {
+            return null;
+        }
+
+        Object.keys(optData.where).forEach(function (key) {
+            gr.addQuery(key, optData.where[key]);
+        });
+
+        gr.setLimit(1);
+        gr.query();
+
+        if (gr.next() === true) {
+            return gr;
+        }
+
+        return null;
+    },
+    _insert: function (record, optData) {
+        //record.initialize();
+        record.newRecord();
+
+        if ('set' in optData) {
+            Object.keys(optData.set).forEach(function (key) {
+                record.setValue(key, optData.set[key]);
+            });
+        }
+
+        var result = record.insert();
+        return result ? result : false;
+    },
+    _update: function (record, optData) {
+
+        // WHERE
+        if (!('where' in optData)) {
+            return false;
+        }
+
+        Object.keys(optData.where).forEach(function (key) {
+            record.addQuery(key, optData.where[key]);
+        });
+
+        record.query();
+
+        if (record.next() !== true) {
+            return false;
+        }
+
+
+        // UPDATE
+        if (!('set' in optData)) {
+            return false;
+        }
+
+        Object.keys(optData.set).forEach(function (key) {
+            record.setValue(key, optData.set[key]);
+        });
+
+        var result = record.update();
+
+        return result ? result : false;
+    },
+
+
+    type: 'Node',
+};
+]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-20 18:33:28</sys_created_on>
+        <sys_id>2091ebcfdb31e300310473e1ba9619f7</sys_id>
+        <sys_mod_count>41</sys_mod_count>
+        <sys_name>Node</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_script_include_2091ebcfdb31e300310473e1ba9619f7</sys_update_name>
+        <sys_updated_by>jxiang</sys_updated_by>
+        <sys_updated_on>2018-11-30 22:17:35</sys_updated_on>
+    </sys_script_include>
+</record_update>

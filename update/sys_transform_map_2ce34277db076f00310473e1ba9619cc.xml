@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_transform_map">
+    <sys_transform_map action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <copy_empty_fields>false</copy_empty_fields>
+        <create_new_record_on_empty_coalesce_fields>false</create_new_record_on_empty_coalesce_fields>
+        <enforce_mandatory_fields>No</enforce_mandatory_fields>
+        <name>fmg_script_stage</name>
+        <order>100</order>
+        <run_business_rules>true</run_business_rules>
+        <run_script>true</run_script>
+        <script><![CDATA[/* global gs source target map log action */
+(function transformRow(source, target, map, log, isUpdate) {
+    // When it's INSERT
+    if (isUpdate === false) {
+        var fmgScriptDefault = new FMGScriptDefault();
+        var data = fmgScriptDefault.Get();
+
+        Object.keys(data).forEach(function (key) {
+            target.setValue(key, data[key]);
+        });
+    }
+})(source, target, map, log, action === 'update');]]></script>
+        <source_table>x_forti_fmgintgv2_fmg_script_stage</source_table>
+        <sys_class_name>sys_transform_map</sys_class_name>
+        <sys_created_by>jhsieh</sys_created_by>
+        <sys_created_on>2019-01-23 22:58:09</sys_created_on>
+        <sys_id>2ce34277db076f00310473e1ba9619cc</sys_id>
+        <sys_mod_count>8</sys_mod_count>
+        <sys_name>fmg_script_stage</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_transform_map_2ce34277db076f00310473e1ba9619cc</sys_update_name>
+        <sys_updated_by>jhsieh</sys_updated_by>
+        <sys_updated_on>2019-03-08 19:17:02</sys_updated_on>
+        <target_table>x_forti_fmgintgv2_fmg_script</target_table>
+    </sys_transform_map>
+</record_update>

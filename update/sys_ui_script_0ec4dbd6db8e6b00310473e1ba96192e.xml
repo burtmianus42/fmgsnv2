@@ -1,0 +1,555 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ui_script">
+    <sys_ui_script action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <description/>
+        <global>false</global>
+        <name>x_forti_fmgintgv2.app_sys_prop</name>
+        <script><![CDATA[/* global jQuery GlideAjax Vue iview FMGAppRequest UtilCli */
+
+(function ($jq, GlideAjax, Vue, iview, FMGAppRequest, UtilCli) {
+    $jq(document).ready(function () {
+        InitVue();
+    });
+
+    function InitVue() {
+        // RELEASE: Disable begugger if releasing
+        Vue.config.debug = false;
+
+        // Init Config
+        iview.lang('en-US');
+
+        // Global filters
+        Vue.filter('pretty', function (value) {
+            return JSON.stringify(value, null, 2);
+        });
+
+        let Main = {
+            render: function (createElement) {
+                if (!this.html) {
+                    return createElement('div', 'Loading ...');
+                } else {
+                    return this.html();
+                }
+            },
+            mounted: function () {
+                // NOTE: When there is only one single-line text input field in a form,
+                // the user agent should accept Enter in that field as a request to submit the form.
+                // To prevent this behavior, you can add @submit.native.prevent on <Form>
+                let html = `
+<Layout>
+    <Header>
+        <div class="headerDiv">
+            <Icon type="ios-settings" size="20"></Icon>
+            <span class="headerTitle">System Properties</span>
+            <span id="versionSpan">
+                Security Operations FortiManagerV2 Integration
+                <span style="font-size: 10px;"> v{{sysProp.appversion}} </span>
+            </span>
+        </div>
+    </Header>
+    <Content>
+        <div>
+            <Alert ref="sysPropAlert"
+                :type="item.type"
+                show-icon
+                closable
+                v-for="item in alert"
+            >
+                <span slot="desc">{{ item.msg }}</span>
+            </Alert>
+
+            <Form ref="sysPropForm"
+                :model="sysProp"
+                @submit.native.prevent="handleSubmit('sysPropForm')"
+                label-position="top">
+                <Row>
+                    <Col span="23" offset="1">
+                        <h2 class="appSysProp_sectionHeader">
+                            Connection to FortiManager API
+                        </h2>
+                    </Col>
+                </Row>
+                <Row>
+                    <Col span="6" offset="1">
+                        <FormItem label="Domain"
+                            prop="fmg.domain" :rules="ruleInline.fmg.domain">
+                            <Input :disabled="sysProp.syswrite == 0"
+                                v-model.trim="sysProp.fmg.domain"
+                                placeholder="Enter FortiManager domain"
+                                clearable>
+                                <span slot="prepend">https://</span>
+                            </Input>
+                        </FormItem>
+                    </Col>
+                    <Col span="3" offset="1">
+                        <FormItem label="Port Number"
+                            prop="fmg.port" :rules="ruleInline.fmg.port">
+                            <Input :disabled="sysProp.syswrite == 0"
+                                v-model.number="sysProp.fmg.port"
+                                placeholder="Enter FortiManager port number"
+                                clearable>
+                                <Icon type="ios-aperture-outline" slot="prepend"></Icon>
+                            </Input>
+                        </FormItem>
+                    </Col>
+                </Row>
+                <Row>
+                    <Col span="6" offset="1">
+                        <FormItem label="Username"
+                            prop="fmg.username" :rules="ruleInline.fmg.username">
+                            <Input :disabled="sysProp.syswrite == 0"
+                                v-model.trim="sysProp.fmg.username"
+                                placeholder="Enter FortiManager username"
+                                clearable>
+                                <Icon type="ios-person-outline" slot="prepend"></Icon>
+                            </Input>
+                        </FormItem>
+                    </Col>
+                    <Col span="6" offset="1">
+                        <FormItem label="Password"
+                            prop="fmg.password" :rules="ruleInline.fmg.password">
+                            <Input :disabled="sysProp.syswrite == 0"
+                                v-model.trim="sysProp.fmg.password"
+                                type="password"
+                                placeholder="Enter FortiAnalyzer password"
+                                clearable>
+                                <Icon type="md-key" slot="prepend"></Icon>
+                            </Input>
+                        </FormItem>
+                    </Col>
+                </Row>
+                <Row>
+                    <Col span="22" offset="1">
+                        <span style="font-size:12px; font-weight:normal">Version: {{sysProp.fmg.version}}</span>
+                    </Col>
+                </Row>
+                <Row>
+                    <Col span="22" offset="1">
+                        <span style="font-size:12px; font-weight:normal">Workspace Mode: {{sysProp.fmg.workspacemode}}</span>
+                    </Col>
+                </Row>
+
+                <Row>
+                    <Col span="23" offset="1">
+                        <h2 class="appSysProp_sectionHeader">
+                            Connection to ServiceNow API
+                        </h2>
+                    </Col>
+                </Row>
+                <Row>
+                    <Col span="6" offset="1">
+                        <FormItem label="Username"
+                            prop="jsonrpc.username" :rules="ruleInline.jsonrpc.username">
+                            <Input :disabled="sysProp.syswrite == 0"
+                                v-model.trim="sysProp.jsonrpc.username"
+                                placeholder="Enter ServiceNow API username"
+                                clearable>
+                                <Icon type="ios-person-outline" slot="prepend"></Icon>
+                            </Input>
+                        </FormItem>
+                    </Col>
+                    <Col span="6" offset="1">
+                        <FormItem label="Password"
+                            prop="jsonrpc.password" :rules="ruleInline.jsonrpc.password">
+                            <Input :disabled="sysProp.syswrite == 0"
+                                v-model.trim="sysProp.jsonrpc.password"
+                                type="password"
+                                placeholder="Enter ServiceNow API password"
+                                clearable>
+                                <Icon type="md-key" slot="prepend"></Icon>
+                            </Input>
+                        </FormItem>
+                    </Col>
+                </Row>
+
+                <Row>
+                    <Col span="23" offset="1">
+                        <h2 class="appSysProp_sectionHeader">
+                            App Settings
+                        </h2>
+                    </Col>
+                </Row>
+                <Row v-if="sysProp.fmg.fmgadomlist">
+                    <Col span="1" class="appSysProp_colLabel">
+                        <Tooltip placement="top-start" content="Specified FortiManager ADOMs will be accessible by App">
+                            <Icon type="ios-help-circle-outline" size="14"></Icon>
+                        </Tooltip>
+                    </Col>
+                    <Col span="6" >
+                        <FormItem label="FortiManager ADOMs"
+                            prop="fmg.adomlist" :rules="ruleInline.fmg.adomlist">
+                            <Select :disabled="sysProp.syswrite == 0"
+                                v-model="sysProp.fmg.adomlist"
+                                filterable
+                                multiple>
+                                <Option  v-for="adom in sysProp.fmg.fmgadomlist"
+                                    :value="adom"
+                                    :key="adom">{{ adom }}</Option>
+                            </Select>
+                        </FormItem>
+                    </Col>
+                </Row>
+                <Row>
+                    <Col span="1" class="appSysProp_colLabel">
+                        <Tooltip placement="top-start" content="Scripts with specified prefix will be loaded in App GUI">
+                            <Icon type="ios-help-circle-outline" size="14"></Icon>
+                        </Tooltip>
+                    </Col>
+                    <Col span="6" >
+                        <FormItem label="FortiManager Script Prefix">
+                            <Input :disabled="sysProp.syswrite == 0"
+                                v-model.trim="sysProp.fmg.scripttplprefix"
+                                placeholder="Enter a prefix"
+                                clearable>
+                                <Icon type="md-search" slot="prepend"></Icon>
+                            </Input>
+                        </FormItem>
+                    </Col>
+                </Row>
+                <Row>
+                    <Col span="22" offset="1">
+                        <FormItem label="Options">
+                            <Checkbox :disabled="sysProp.syswrite == 0"
+                                v-model.number="sysProp.fmg.isdeletescript"
+                                :true-value="1"
+                                :false-value="0">Delete scripts from FortiManager after execution</Checkbox>
+                        </FormItem>
+                    </Col>
+                </Row>
+
+                <Row>
+                    <Col span="6" offset="1" style="margin-top: 2em;">
+                        <FormItem>
+                            <Button :disabled="sysProp.syswrite == 0"
+                                type="primary" @click="handleSubmit('sysPropForm')">Save</Button>
+                        </FormItem>
+                    </Col>
+                </Row>
+            </Form>
+        </div>
+    </Content>
+</Layout>`;
+
+                this.html = Vue.compile(html).render;
+            },
+            data: function () {
+                return {
+                    html: null,
+                    sysProp: {
+                        fmg: {
+                            domain: '',
+                            port: 443,
+                            username: '',
+                            password: '',
+                            version: '',
+                            workspacemode: '',
+                            adomlist: '',
+                            fmgadomlist: '',
+                            scripttplprefix: '',
+                            isdeletescript: 0,
+                        },
+                        jsonrpc: {
+                            username: '',
+                            password: ''
+                        },
+                        appversion: 0,
+                        syswrite: 0
+                    },
+                    alert: [],
+                    error: {
+                        fmg: {
+                            version: '',
+                        },
+                    },
+                    ruleInline: {
+                        fmg: {
+                            domain: [
+                                {
+                                    required: true,
+                                    validator: function (rule, value, callback) {
+                                        if (!value) {
+                                            callback(new Error('Please fill in the domain'));
+                                            return;
+                                        }
+
+                                        if (UtilCli.IsValidDomain(value) !== true) {
+                                            callback(new Error('Please enter a valid domain'));
+                                            return;
+                                        }
+
+                                        callback();
+                                    },
+                                    trigger: 'blur',
+                                },
+                            ],
+                            port: [
+                                {
+                                    required: true,
+                                    validator: function (rule, value, callback) {
+                                        if (!value) {
+                                            callback(new Error('Please fill in the port number'));
+                                            return;
+                                        }
+
+                                        if (UtilCli.IsNumeric(value) !== true || !(Number(value) >= 0)) {
+                                            callback(new Error('Please enter a valid port number'));
+                                            return;
+                                        }
+
+                                        callback();
+                                    },
+                                    trigger: 'blur',
+                                },
+                            ],
+                            username: [
+                                {
+                                    required: true,
+                                    message: 'Please fill in the username',
+                                    trigger: 'blur',
+                                },
+                            ],
+                            password: [
+                                {
+                                    required: true,
+                                    validator: function (rule, value, callback) {
+                                        if (!value) {
+                                            callback(new Error('Please fill in the password'));
+                                            return;
+                                        }
+
+                                        if (!(value.length >= 6)) {
+                                            callback(new Error('The password length cannot be less than 6 characters'));
+                                            return;
+                                        }
+
+                                        callback();
+                                    },
+                                    trigger: 'blur',
+                                },
+                            ],
+                            adomlist: [
+                                {
+                                    required: true,
+                                    validator: function (rule, value, callback) {
+                                        if (value.length === 0) {
+                                            callback(new Error('Please select at least one ADOM'));
+                                            return;
+                                        }
+
+                                        callback();
+                                    },
+                                    trigger: 'blur',
+                                },
+                            ],
+                        },
+                        jsonrpc: {
+                            username: [
+                                {
+                                    required: true,
+                                    message: 'Please fill in the username',
+                                    trigger: 'blur',
+                                },
+                            ],
+                            password: [
+                                {
+                                    required: true,
+                                    validator: function (rule, value, callback) {
+                                        if (!value) {
+                                            callback(new Error('Please fill in the password'));
+                                            return;
+                                        }
+
+                                        if (!(value.length >= 6)) {
+                                            callback(new Error('The password length cannot be less than 6 characters'));
+                                            return;
+                                        }
+
+                                        callback();
+                                    },
+                                    trigger: 'blur',
+                                },
+                            ],
+                        },
+                    },
+                };
+            },
+            methods: {
+                handleSubmit: function (formName) {
+                    let isValid = false;
+
+                    this.$refs[formName].validate((valid) => {
+                        if (valid !== true) {
+                            this.$Message.error('Validation error');
+                            return;
+                        }
+
+                        isValid = true;
+                    });
+
+                    if (isValid === true) {
+                        this.saveSysProp();
+                    }
+                },
+                clearAlert: function () {
+                    if ('sysPropAlert' in this.$refs) {
+                        for (var i = 0; i < this.$refs.sysPropAlert.length; i++) {
+                            this.$refs.sysPropAlert[i].$data.closed = true;
+                        }
+                    }
+                },
+                saveSysProp: function () {
+                    this.clearAlert();
+
+                    // iView Spin - loading animation
+                    this.$Spin.show({
+                        render: (h) => {
+                            return h('div', [
+                                h('div', {
+                                    domProps: {
+                                        innerHTML: `
+<section class="loader">
+    <svg class="spinner" width="32px" height="32px" viewBox="0 0 66 66" xmlns="http://www.w3.org/2000/svg">
+        <circle class="path" fill="transparent" stroke-width="2" cx="33" cy="33" r="30" stroke="url(#gradient)"/>
+            <linearGradient id="gradient"> <stop offset="50%" stop-color="#42d179" stop-opacity="1"/>
+                <stop offset="65%" stop-color="#42d179" stop-opacity=".5"/> <stop offset="100%" stop-color="#42d179" stop-opacity="0"/>
+            </linearGradient>
+        </circle>
+        <svg class="spinner-dot dot" width="5px" height="5px" viewBox="0 0 66 66" xmlns="http://www.w3.org/2000/svg" x="37" y="1.5">
+            <circle class="path" fill="#42d179" cx="33" cy="33" r="30"/> </circle>
+        </svg>
+    </svg>
+    <span>Loading</span>
+</section>`,
+                                    },
+                                })
+                            ]);
+                        },
+                    });
+
+                    var ga = new GlideAjax('FMGJSONRPC');
+                    ga.addParam('sysparm_name', 'SysPropSave');
+                    ga.addParam('sysparm_requestObj', (new FMGAppRequest('POST', '/sys_prop/save', this.sysProp)).getDataString());
+                    ga.setErrorCallback(JSONRPC_Error.bind({ vm: this }));
+                    ga.getXMLAnswer(JSONRPC_SysPropSave.bind({ vm: this }));
+                },
+                fetchSysProp: function () {
+                    // TODO: see if we could render app first and popup a loading dialog.
+                    var ga = new GlideAjax('FMGJSONRPC');
+                    ga.addParam('sysparm_name', 'SysPropGet');
+                    ga.setErrorCallback(JSONRPC_Error.bind({ vm: this }));
+                    ga.getXMLAnswer(JSONRPC_SysPropGet.bind({ vm: this }));
+                },
+            },
+        };
+        let MainComponent = Vue.extend(Main);
+        let vm = new MainComponent();
+        vm.$mount('#app');
+        vm.fetchSysProp();
+    }
+
+    // Scroll to top
+    function SysProp_ScrollToTop() {
+        $jq('html, body').animate({ scrollTop: 0 }, 400);
+    }
+
+    // GlideAjax callback - error
+    function JSONRPC_Error(responseData) {
+        this.vm.$data.alert.push({
+            type: 'error',
+            msg: 'Network Connection-Error occurred while attempting to process data from server. responseData.statusText: ' + responseData.statusText,
+        });
+        SysProp_ScrollToTop();
+    }
+
+    // GlideAjax callback - Get system properties
+    function JSONRPC_SysPropGet(responseData) {
+        if (!responseData) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        var responseObj = JSON.parse(responseData);
+        if (responseObj.result[0].status.code !== 0) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+            return;
+        }
+
+        if (!('result' in responseObj)) {
+            return;
+        }
+
+        this.vm.$data.sysProp = responseObj.result[0].data.sysProp;
+    }
+
+    // GlideAjax callback - Save system properties
+    function JSONRPC_SysPropSave(responseData) {
+        // Hide the loading animation
+        this.vm.$Spin.hide();
+
+        if (!responseData) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        var responseObj = JSON.parse(responseData);
+        if ('result' in responseObj && '0' in responseObj.result) {
+            if ('status' in responseObj.result[0] && responseObj.result[0].status.code !== 0) {
+                this.vm.$data.alert.push({
+                    type: 'error',
+                    msg: responseObj.result[0].status.message,
+                });
+            }
+
+            if ('data' in responseObj.result[0]) {
+                if ('msgArr' in responseObj.result[0].data) {
+                    for (var i = 0; i < responseObj.result[0].data.msgArr.length; i++) {
+                        this.vm.$data.alert.push({
+                            type: responseObj.result[0].data.msgArr[i].type,
+                            msg: responseObj.result[0].data.msgArr[i].msg,
+                        });
+                    }
+                }
+
+                if ('fmgVersion' in responseObj.result[0].data) {
+                    this.vm.$data.sysProp.fmg.version = responseObj.result[0].data.fmgVersion;
+                }
+
+                if ('fmgWorkspaceMode' in responseObj.result[0].data) {
+                    this.vm.$data.sysProp.fmg.workspacemode = responseObj.result[0].data.fmgWorkspaceMode;
+                }
+
+                // Admon list from FMG
+                if ('fmgadomlist' in responseObj.result[0].data) {
+                    this.vm.$data.sysProp.fmg.fmgadomlist = responseObj.result[0].data.fmgadomlist;
+                } else {
+                    this.vm.$data.sysProp.fmg.fmgadomlist = '';
+                }
+
+                // Selected Admon List
+                if ('adomlist' in responseObj.result[0].data) {
+                    this.vm.$data.sysProp.fmg.adomlist = responseObj.result[0].data.adomlist;
+                }
+            }
+        }
+
+        SysProp_ScrollToTop();
+    }
+})(jQuery, GlideAjax, Vue, iview, FMGAppRequest, UtilCli);
+]]></script>
+        <script_name>app_sys_prop</script_name>
+        <sys_class_name>sys_ui_script</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-30 19:58:11</sys_created_on>
+        <sys_id>0ec4dbd6db8e6b00310473e1ba96192e</sys_id>
+        <sys_mod_count>87</sys_mod_count>
+        <sys_name>x_forti_fmgintgv2.app_sys_prop</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_ui_script_0ec4dbd6db8e6b00310473e1ba96192e</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-04-15 22:55:13</sys_updated_on>
+        <ui_type>0</ui_type>
+        <use_scoped_format>false</use_scoped_format>
+    </sys_ui_script>
+</record_update>

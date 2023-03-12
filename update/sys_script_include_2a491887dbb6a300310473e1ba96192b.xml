@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>public</access>
+        <active>true</active>
+        <api_name>x_forti_fmgintgv2.FMGApiCli</api_name>
+        <caller_access/>
+        <client_callable>false</client_callable>
+        <description/>
+        <name>FMGApiCli</name>
+        <script><![CDATA[var FMGApiCli = Class.create();
+
+FMGApiCli.prototype = {
+    initialize: function () {
+        this.currScopeName = gs.getCurrentScopeName();
+    },
+    SendRestRequest: function (requestObj) {
+        var restApi = new RESTApi();
+        return restApi.SendRESTRequest(restApi.BuildRESTRequestObj('post', gs.getProperty('glide.servlet.uri') + 'api/x_forti_fmgintgv2/fmg/api', requestObj, gs.getProperty(this.currScopeName + '.jsonrpc.username'), gs.getProperty(this.currScopeName + '.jsonrpc.password')));
+    },
+    type: 'FMGApiCli'
+};]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>jhsieh</sys_created_by>
+        <sys_created_on>2019-01-08 21:02:42</sys_created_on>
+        <sys_id>2a491887dbb6a300310473e1ba96192b</sys_id>
+        <sys_mod_count>2</sys_mod_count>
+        <sys_name>FMGApiCli</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_script_include_2a491887dbb6a300310473e1ba96192b</sys_update_name>
+        <sys_updated_by>jhsieh</sys_updated_by>
+        <sys_updated_on>2019-01-08 21:31:08</sys_updated_on>
+    </sys_script_include>
+</record_update>

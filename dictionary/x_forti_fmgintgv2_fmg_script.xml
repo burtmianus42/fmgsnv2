@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?><database>
+    <element label="fmg_script" max_length="40" name="x_forti_fmgintgv2_fmg_script" type="collection">
+        <element label="Adom" max_length="30" name="adom" type="string"/>
+        <element label="Deploy percent" max_length="40" name="deploy_percent" type="integer"/>
+        <element label="Deploy status" max_length="50" name="deploy_status" type="string"/>
+        <element label="Deploy summary" max_length="16777215" name="deploy_summary" type="string"/>
+        <element label="Deploy task ID" max_length="40" name="deploy_task_id" type="integer"/>
+        <element label="Description" max_length="250" name="description" type="string"/>
+        <element label="Device List" max_length="16777215" name="device_list" type="string"/>
+        <element label="Exec script percent" max_length="40" name="exec_script_percent" type="integer"/>
+        <element label="Exec script status" max_length="50" name="exec_script_status" type="string"/>
+        <element label="Exec script summary" max_length="16777215" name="exec_script_summary" type="string"/>
+        <element label="Exec script task ID" max_length="40" name="exec_script_task_id" type="integer"/>
+        <element label="Installation Device" max_length="16777215" name="installation_device" type="string"/>
+        <element label="Is adom committed" max_length="40" name="is_adom_committed" type="integer"/>
+        <element label="Is cancelled" max_length="40" name="is_cancelled" type="integer"/>
+        <element label="Is submitted" max_length="40" name="is_submitted" type="integer"/>
+        <element attributes="ignore_filter_on_new=true" default="javascript:global.getNextObjNumberPadded();" label="Number" max_length="40" name="number" type="string"/>
+        <element label="Policy Package" max_length="50" name="policy_package" type="string"/>
+        <element label="Policy Package List" max_length="16777215" name="policy_package_list" type="string"/>
+        <element label="Sch adom status" max_length="40" name="sch_adom_status" type="integer"/>
+        <element label="Sch check deploy count" max_length="40" name="sch_check_deploy_count" type="integer"/>
+        <element label="Sch check deploy status" max_length="40" name="sch_check_deploy_status" type="integer"/>
+        <element label="Sch check deploy time" max_length="40" name="sch_check_deploy_time" type="integer"/>
+        <element label="Sch check exec count" max_length="40" name="sch_check_exec_count" type="integer"/>
+        <element label="Sch check exec status" max_length="40" name="sch_check_exec_status" type="integer"/>
+        <element label="Sch check exec time" max_length="40" name="sch_check_exec_time" type="integer"/>
+        <element label="Sch create script count" max_length="40" name="sch_create_script_count" type="integer"/>
+        <element label="Sch create script status" max_length="40" name="sch_create_script_status" type="integer"/>
+        <element label="Sch create script time" max_length="40" name="sch_create_script_time" type="integer"/>
+        <element label="Sch delete script count" max_length="40" name="sch_delete_script_count" type="integer"/>
+        <element label="Sch delete script status" max_length="40" name="sch_delete_script_status" type="integer"/>
+        <element label="Sch delete script time" max_length="40" name="sch_delete_script_time" type="integer"/>
+        <element label="Sch deploy count" max_length="40" name="sch_deploy_count" type="integer"/>
+        <element label="Sch deploy status" max_length="40" name="sch_deploy_status" type="integer"/>
+        <element label="Sch deploy time" max_length="40" name="sch_deploy_time" type="integer"/>
+        <element label="Sch exec script count" max_length="40" name="sch_exec_script_count" type="integer"/>
+        <element label="Sch exec script status" max_length="40" name="sch_exec_script_status" type="integer"/>
+        <element label="Sch exec script time" max_length="40" name="sch_exec_script_time" type="integer"/>
+        <element label="Scope" max_length="16777215" name="scope" type="string"/>
+        <element label="Script Content" max_length="16777215" name="script_content" type="string"/>
+        <element label="Script Content Configured" max_length="16777215" name="script_content_configured" type="string"/>
+        <element label="Script Content Configured Progress" max_length="16777215" name="script_content_configured_progress" type="string"/>
+        <element label="Script Index Selected" max_length="16777215" name="script_index_selected" type="string"/>
+        <element label="Script List" max_length="16777215" name="script_list" type="string"/>
+        <element label="Script Name" max_length="50" name="script_name" type="string"/>
+        <element label="Script name actual" max_length="40" name="script_name_actual" type="string"/>
+        <element label="Script Type" max_length="25" name="script_type" type="string"/>
+        <index name="index">
+            <element name="number"/>
+        </index>
+        <index name="index2">
+            <element name="sch_delete_script_status"/>
+        </index>
+        <index name="index3">
+            <element name="sch_create_script_status"/>
+        </index>
+        <index name="index4">
+            <element name="sch_check_exec_status"/>
+        </index>
+        <index name="index5">
+            <element name="sch_check_deploy_status"/>
+        </index>
+        <index name="index6">
+            <element name="sch_deploy_status"/>
+        </index>
+        <index name="index7">
+            <element name="sch_exec_script_status"/>
+        </index>
+    </element>
+</database>

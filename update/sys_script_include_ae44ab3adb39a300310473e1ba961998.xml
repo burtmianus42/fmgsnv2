@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>package_private</access>
+        <active>true</active>
+        <api_name>x_forti_fmgintgv2.UtilSrv</api_name>
+        <caller_access/>
+        <client_callable>false</client_callable>
+        <description/>
+        <name>UtilSrv</name>
+        <script><![CDATA[/* global Class */
+/**
+ * UtilSrv send http request.
+ */
+var UtilSrv = Class.create();
+
+UtilSrv.prototype = {
+    initialize: function () {
+    },
+    LogPrefix: function () {
+        return 'FortiManager: ';
+    },
+    LogInfo: function (msg) {
+        gs.info('[' + new Date().getTime() + ']' + this.LogPrefix() + msg);
+    },
+    LogWarn: function (msg) {
+        gs.warn('[' + new Date().getTime() + ']' + this.LogPrefix() + msg);
+    },
+    LogError: function (msg) {
+        gs.error('[' + new Date().getTime() + ']' + this.LogPrefix() + msg);
+    },
+    LogDebug: function (msg) {
+        gs.info('[' + new Date().getTime() + ']' + this.LogPrefix() + 'DEBUG: ' + msg);
+    },
+    GetUnixTimestamp: function () {
+        //return (new Date()).getTime() / 1000;
+        return parseInt(Date.now() / 1000);
+    },
+    IsValidAdom: function (v) {
+        if (!v) return false;
+    },
+    IsValidDomain: function (v) {
+        if (!v) return false;
+        var re = /^(?!:\/\/)([a-zA-Z0-9-]+\.){0,5}[a-zA-Z0-9-][a-zA-Z0-9-]+\.[a-zA-Z]{2,64}?$/gi;
+        return re.test(v);
+    },
+    IsNumeric: function (n) {
+        return !isNaN(parseFloat(n)) && isFinite(n);
+    },
+    IsEmptyObject: function (obj) {
+        // because Object.keys(new Date()).length === 0;
+        // we have to do some additional check
+        return Object.keys(obj).length === 0 && obj.constructor === Object;
+    },
+    TryParseJSON: function (jsonString) {
+        try {
+            var o = JSON.parse(jsonString);
+
+            // Handle non-exception-throwing cases:
+            // Neither JSON.parse(false) or JSON.parse(1234) throw errors, hence the type-checking,
+            // but... JSON.parse(null) returns null, and typeof null === "object",
+            // so we must check for that, too. Thankfully, null is falsey, so this suffices:
+            if (o && typeof o === 'object') {
+                return o;
+            }
+        }
+        catch (e) {
+            // NOTE: There are few cases where no exception is raised for JSON.parse({something that isn't JSON}).
+        }
+
+        return false;
+    },
+
+    ReplaceLineBreakBR: function (str) {
+        return str.replace(/(?:\r\n|\r|\n)/g, '<br>');
+    },
+
+    GenerateCustomizedError: function (sid, functionName, message) {
+        var error = new Error(message);
+        error.sid = sid;
+        error.functionName = functionName;
+        error.isCustomized = true;
+        return error;
+    },
+
+    GetAndLogExceptionObj: function (ex) {
+
+        var obj = {
+            message: '',
+            fileName: 'Unknown_fileName',
+            lineNumber: 'Unknow_lineNumber',
+            isCustomized: false,
+            functionName: 'Unknow_functionName',
+            sid: '',
+        };
+
+        if (typeof ex === 'string' || ex instanceof String) {
+            obj.message = ex;
+        } else {
+            obj.message = ('message' in ex) ? ex.message : 'Exception thrown but the exception has no ex.message field';
+            obj.fileName = ('fileName' in ex) ? ex.fileName : 'Unknown_fileName';
+            obj.lineNumber = ('lineNumber' in ex) ? ex.lineNumber : 'Unknow_lineNumber';
+            obj.isCustomized = ('isCustomized' in ex) ? ex.isCustomized : false;
+            obj.functionName = ('functionName' in ex) ? ex.functionName : 'Unknow_functionName';
+            obj.sid = ('sid' in ex) ? ex.sid : '';
+        }
+
+        var errorMessage = '';
+        if (obj.isCustomized) {
+            errorMessage = obj.message;
+            if (obj.sid != '') {
+                errorMessage = "[" + obj.sid + "][" + obj.functionName + "]" + errorMessage;
+            } else {
+                errorMessage = "[" + obj.functionName + "]" + errorMessage;
+            }
+        } else {
+            errorMessage = 'fileName: ' + obj.fileName + '; line: ' + obj.lineNumber + '; errorMessage: ' + obj.message;
+        }
+        this.LogError(errorMessage);
+        return obj;
+    },
+
+    GetPropertyBasedOnNameOrArray: function (propertyName, propertyArrayName, responseObj) {
+        // FMG API version 6.0 6.2 6.4
+        if (propertyName in responseObj) {
+            return responseObj[propertyName]
+        }
+        // FMG API version 7.0 or later
+        if (propertyArrayName in responseObj) {
+            var itemObj = responseObj[propertyArrayName][0];
+            if (propertyName in itemObj) {
+                return itemObj[propertyName];
+            }
+        }
+
+        return '';
+    },
+    type: 'UtilSrv'
+};]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-20 00:06:52</sys_created_on>
+        <sys_id>ae44ab3adb39a300310473e1ba961998</sys_id>
+        <sys_mod_count>7</sys_mod_count>
+        <sys_name>UtilSrv</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_script_include_ae44ab3adb39a300310473e1ba961998</sys_update_name>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2022-03-17 23:00:49</sys_updated_on>
+    </sys_script_include>
+</record_update>

@@ -1,0 +1,1372 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>package_private</access>
+        <active>true</active>
+        <api_name>x_forti_fmgintgv2.FMGAppExecution</api_name>
+        <caller_access/>
+        <client_callable>false</client_callable>
+        <description/>
+        <name>FMGAppExecution</name>
+        <script><![CDATA[/* global gs Class GlideRecord UtilSrv FMGApi */
+/**
+ * FMGAppExecution saves data through Import Set API.
+ */
+var FMGAppExecution = Class.create();
+
+FMGAppExecution.prototype = {
+    get STATUS_INIT() {
+        return 0;
+    },
+    get STATUS_RUNNING() {
+        return 1;
+    },
+    get STATUS_DONE() {
+        return 2;
+    },
+    get STATUS_TIMEOUT() {
+        return 3;
+    },
+    get STATUS_CANCELLED() {
+        return 4;
+    },
+    get WORKSPACE_MODE_NORMAL() {
+        return 'normal';
+    },
+    initialize: function () {
+        // Important variable (must be placed at top)
+        this.currScopeName = gs.getCurrentScopeName();
+
+        // Required variables
+        // Max try time for each different script type
+        this.maxFetchCount = 18;
+        // TODO: Review maxTryTime (it seems Simply reset to init. However, what if the long process is still running and set the value later on?)
+        this.maxTryTime = 30; // seconds
+
+        // NOTE:
+        // Create: 6 * maxFetchCount = 108
+        // Exec: 6 * maxFetchCount = 108
+        // CheckExec: 20 * maxFetchCount = 360
+        // Deploy: 6 * maxFetchCount = 108
+        // CheckDeploy: 20 * maxFetchCount = 360
+        this.maxLockTime = 1044; // seconds
+
+        if (gs.getProperty(this.currScopeName + '.fmg.isdeletescript') === '1') {
+            this.maxLockTime += 108; // Delete: 6 * maxFetchCount = 108
+        }
+
+        this.isWorkspaceModeNormalEnabled = this.IsWorkspaceModeNormalEnabled();
+
+        // Reusable variables
+        this.utilSrv = new UtilSrv();
+        this.fmgApi = new FMGApi();
+        this.node = new Node();
+
+        // Constants
+        this.ADOMStatus = {
+            ACQUIRED: 0,
+            FAILED: 1,
+            LOCKEDBYOTHERS: 2,
+            RECONNECTING: 3,
+        };
+    },
+
+    CurrMinusTryTime: function () {
+        return this.utilSrv.GetUnixTimestamp() - this.maxTryTime;
+    },
+
+    IsWorkspaceModeNormalEnabled: function () {
+        if (gs.getProperty(this.currScopeName + '.fmg.workspacemode') !== this.WORKSPACE_MODE_NORMAL) {
+            return false;
+        }
+        return true;
+    },
+
+    GetDefaultADOMLock: function () {
+        return {
+            ADOM: '',
+            Number: '',
+            Time: 0,
+        };
+    },
+
+    SetADOMLock: function (adom, number, time) {
+        var adomLock = this.GetDefaultADOMLock();
+        adomLock.ADOM = adom;
+        adomLock.Number = number;
+        adomLock.Time = time;
+        return this.node.SaveSysProp(this.currScopeName + '.fmg.adomlock', JSON.stringify(adomLock), ['sys_script']);
+    },
+
+    GetADOMLock: function () {
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === false) {
+            return this.GetDefaultADOMLock();
+        }
+
+        var al = this.utilSrv.TryParseJSON(gs.getProperty(this.currScopeName + '.fmg.adomlock'));
+        if (al === false) {
+            return false;
+        }
+
+        if (!('ADOM' in al)
+            || !('Number' in al)
+            || !('Time' in al)
+        ) {
+            return false;
+        }
+
+        var adomLock = this.GetDefaultADOMLock();
+        adomLock.ADOM = al.ADOM;
+        adomLock.Number = al.Number;
+        adomLock.Time = al.Time;
+        return adomLock;
+    },
+
+    AcquireADOMLock: function (adom) {
+        var lockADOMResponse = this.fmgApi.FMGAPI_LockADOM(adom);
+
+        var res = this.ADOMStatus.ACQUIRED;
+        if (
+            !('result' in lockADOMResponse)
+            || !('0' in lockADOMResponse.result)
+            || !('data' in lockADOMResponse.result[0])
+            || !('bodyObj' in lockADOMResponse.result[0].data)
+            || !('result' in lockADOMResponse.result[0].data.bodyObj)
+            || !('0' in lockADOMResponse.result[0].data.bodyObj.result)
+            || !('status' in lockADOMResponse.result[0].data.bodyObj.result[0])
+            || !('code' in lockADOMResponse.result[0].data.bodyObj.result[0].status)
+        ) {
+            res = this.ADOMStatus.RECONNECTING;
+        } else if (lockADOMResponse.result[0].data.bodyObj.result[0].status.code !== 0) {
+            if (lockADOMResponse.result[0].data.bodyObj.result[0].status.code == -20055) {
+                res = this.ADOMStatus.LOCKEDBYOTHERS;
+            } else {
+                res = this.ADOMStatus.FAILED;
+            }
+        }
+
+        return res;
+    },
+
+    ReleaseADOMLock: function (adom) {
+        var unlockADOMResponse = this.fmgApi.FMGAPI_UnlockADOM(adom);
+
+        if (
+            !('result' in unlockADOMResponse)
+            || !('0' in unlockADOMResponse.result)
+            || !('data' in unlockADOMResponse.result[0])
+            || !('bodyObj' in unlockADOMResponse.result[0].data)
+            || !('result' in unlockADOMResponse.result[0].data.bodyObj)
+            || !('0' in unlockADOMResponse.result[0].data.bodyObj.result)
+            || !('status' in unlockADOMResponse.result[0].data.bodyObj.result[0])
+            || !('code' in unlockADOMResponse.result[0].data.bodyObj.result[0].status)
+        ) {
+            return false;
+        }
+
+        if (unlockADOMResponse.result[0].data.bodyObj.result[0].status.code !== 0) {
+            return false;
+        }
+
+        return true;
+    },
+
+    CommitADOMChange: function (adom) {
+        var commitADOMChangeResponse = this.fmgApi.FMGAPI_CommitADOMChange(adom);
+
+        if (
+            !('result' in commitADOMChangeResponse)
+            || !('0' in commitADOMChangeResponse.result)
+            || !('data' in commitADOMChangeResponse.result[0])
+            || !('bodyObj' in commitADOMChangeResponse.result[0].data)
+            || !('result' in commitADOMChangeResponse.result[0].data.bodyObj)
+            || !('0' in commitADOMChangeResponse.result[0].data.bodyObj.result)
+            || !('status' in commitADOMChangeResponse.result[0].data.bodyObj.result[0])
+            || !('code' in commitADOMChangeResponse.result[0].data.bodyObj.result[0].status)
+        ) {
+            return false;
+        }
+
+        if (commitADOMChangeResponse.result[0].data.bodyObj.result[0].status.code !== 0) {
+            return false;
+        }
+
+        return true;
+    },
+
+    ReleaseAndResetADOMLock: function (adom) {
+        if (this.ReleaseADOMLock(adom) !== true) {
+            throw this.utilSrv.GenerateCustomizedError('', 'ReleaseAndResetADOMLock', 'Release ADOM Lock ' + adom + ' failed');
+        }
+
+        if (this.SetADOMLock('', '', 0) === false) {
+            throw this.utilSrv.GenerateCustomizedError('', 'ReleaseAndResetADOMLock', 'Reset ADOM Lock info ' + adom + ' to system properties failed');
+        }
+    },
+
+    LockADOMCleanUpMaxTime: function (adomLock) {
+        // Release lock if the lock is expired
+        if (
+            adomLock.ADOM.length > 0
+            && adomLock.Number.length > 0
+            && (this.utilSrv.GetUnixTimestamp() - adomLock.Time) > this.maxLockTime
+        ) {
+            this.ReleaseAndResetADOMLock(adomLock.ADOM);
+        }
+    },
+
+    LockADOM: function () {
+        var adomLock = this.GetADOMLock();
+
+        // Skip when the lock is not expired yet
+        if (
+            adomLock.ADOM.length > 0
+            && adomLock.Number.length > 0
+            && (this.utilSrv.GetUnixTimestamp() - adomLock.Time) < this.maxLockTime
+        ) {
+            return;
+        }
+
+        // Clean up records
+        try {
+            this.LockADOMCleanUpMaxTime(adomLock);
+        } catch (ex) {
+            this.utilSrv.GetAndLogExceptionObj(ex);
+            return;
+        }
+
+        try {
+            // Get one pending record to be processed at a time
+            var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+            gr.addQuery('sch_create_script_status', '=', this.STATUS_INIT);
+            gr.addQuery('is_submitted', '=', 1);
+            gr.orderBy('sys_updated_on');
+            gr.setLimit(1);
+            gr.query();
+
+            if (gr.next() !== true) {
+                return;
+            }
+
+            // Acquire ADOM lock
+            var res = this.AcquireADOMLock(gr.getValue('adom'));
+            gr.setValue('sch_adom_status', res);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'LockADOM', 'Update record failed');
+            }
+
+            if (res !== this.ADOMStatus.ACQUIRED) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'LockADOM', 'Acquire ADOM Lock ' + gr.getValue('adom') + ' failed');
+            }
+
+            // Set ADOM lock
+            if (this.SetADOMLock(gr.getValue('adom'), gr.getValue('number'), this.utilSrv.GetUnixTimestamp()) === false) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'LockADOM', 'Set ADOM Lock info ' + gr.getValue('adom') + ' to system properties failed');
+            }
+        } catch (ex) {
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        }
+    },
+
+    CreateScriptCleanUpMaxCount: function (adomLock) {
+        // Disable records that exceed max retry count
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_create_script_status', '<', this.STATUS_DONE);
+        gr.addQuery('sch_create_script_count', '>=', this.maxFetchCount);
+        gr.addQuery('sch_create_script_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_create_script_status', this.STATUS_TIMEOUT);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CreateScriptCleanUpMaxCount', 'Update record failed');
+            }
+
+            // Workspace mode - Release and reset ADOM lock
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                this.ReleaseAndResetADOMLock(adomLock.ADOM);
+            }
+        }
+    },
+
+    CreateScriptCleanUpMaxTime: function (adomLock) {
+        // Reset records that exceed max try time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_create_script_status', '=', this.STATUS_RUNNING);
+        gr.addQuery('sch_create_script_count', '<', this.maxFetchCount);
+        gr.addQuery('sch_create_script_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_create_script_status', this.STATUS_INIT);
+            gr.setValue('sch_create_script_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CreateScriptCleanUpMaxCount', 'Update record failed');
+            }
+        }
+    },
+
+    CreateScript: function () {
+        var adomLock = this.GetADOMLock();
+
+        // Clean up records
+        try {
+            this.CreateScriptCleanUpMaxCount(adomLock);
+            this.CreateScriptCleanUpMaxTime(adomLock);
+        } catch (ex) {
+            this.utilSrv.GetAndLogExceptionObj(ex);
+            return;
+        }
+
+        try {
+            // Get one pending record to be processed at a time
+            var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+            // Workspace mode
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                gr.addQuery('number', '=', adomLock.Number);
+            }
+
+            gr.addQuery('sch_create_script_status', '=', this.STATUS_INIT);
+            gr.addQuery('is_submitted', '=', 1);
+            gr.orderBy('sys_updated_on');
+            gr.setLimit(1);
+            gr.query();
+
+            if (gr.next() !== true) {
+                return;
+            }
+
+            // is_cancelled
+            if (gr.getValue('is_cancelled') === '1') {
+                try {
+                    gr.setValue('sch_create_script_status', this.STATUS_CANCELLED);
+                    if (gr.update() === null) {
+                        throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CreateScript', 'Update record failed');
+                    }
+
+                    // Workspace mode - Release and reset ADOM lock
+                    if (this.isWorkspaceModeNormalEnabled === true) {
+                        this.ReleaseAndResetADOMLock(adomLock.ADOM);
+                    }
+                } catch (ex) {
+                    this.utilSrv.GetAndLogExceptionObj(ex);
+                }
+                return;
+            }
+
+            var number = gr.getValue('number');
+            var script_name_actual = this.fmgApi.FMGAPI_GenerateScriptName(number);
+
+            // Set status to running before proceed
+            var tryCount = Number(gr.getValue('sch_create_script_count')) || 0;
+            tryCount++;
+
+            gr.setValue('sch_create_script_status', this.STATUS_RUNNING);
+            gr.setValue('sch_create_script_time', this.utilSrv.GetUnixTimestamp());
+            gr.setValue('sch_create_script_count', tryCount);
+            gr.setValue('script_name_actual', script_name_actual);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CreateScript', 'Update record failed');
+            }
+
+            // Prepare data
+            var adom = gr.getValue('adom');
+            var script_name = gr.getValue('script_name');
+            var script_type = gr.getValue('script_type');
+
+            var createScriptBody = {
+                'content': gs.base64Decode(gr.getValue('script_content_configured')),
+                'name': script_name,
+                'target': script_type,
+                'type': 'cli',
+            };
+
+            // Create script
+            var createScriptResponse = this.fmgApi.FMGAPI_CreateScript(adom, createScriptBody, script_name_actual);
+            if (
+                createScriptResponse === null
+                || typeof createScriptResponse !== 'object'
+                || !('result' in createScriptResponse)
+                || !('0' in createScriptResponse.result)
+                || !('status' in createScriptResponse.result[0])
+                || !('code' in createScriptResponse.result[0].status)
+                || !('data' in createScriptResponse.result[0])
+                || !('httpStatus' in createScriptResponse.result[0].data)
+                || !('bodyObj' in createScriptResponse.result[0].data)
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CreateScriptResponse', 'Response is invalid');
+            }
+
+            if (
+                createScriptResponse.result[0].status.code != 0
+                || createScriptResponse.result[0].data.httpStatus != 200
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CreateScriptResponse', 'Response failed');
+            }
+
+            // Done
+            gr.setValue('sch_create_script_status', this.STATUS_DONE);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CreateScript', 'Update record failed');
+            }
+        } catch (ex) {
+            // Reset
+            gr.setValue('sch_create_script_status', this.STATUS_INIT);
+            gr.setValue('sch_create_script_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CreateScript', 'Update record failed');
+            }
+
+            // Log error
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        }
+    },
+
+    ExecScriptCleanUpMaxCount: function (adomLock) {
+        // Disable records that exceed max retry count
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_exec_script_status', '<', this.STATUS_DONE);
+        gr.addQuery('sch_exec_script_count', '>=', this.maxFetchCount);
+        gr.addQuery('sch_exec_script_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_exec_script_status', this.STATUS_TIMEOUT);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScriptCleanUpMaxCount', 'update record failed');
+            }
+
+            // Workspace mode - Release and reset ADOM lock
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                this.ReleaseAndResetADOMLock(adomLock.ADOM);
+            }
+        }
+    },
+
+    ExecScriptCleanUpMaxTime: function (adomLock) {
+        // Reset records that exceed max try time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_exec_script_status', '=', this.STATUS_RUNNING);
+        gr.addQuery('sch_exec_script_count', '<', this.maxFetchCount);
+        gr.addQuery('sch_exec_script_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_exec_script_status', this.STATUS_INIT);
+            gr.setValue('sch_exec_script_time', 0);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScriptCleanUpMaxTime', 'update record failed');
+            }
+        }
+    },
+
+    ExecScript: function () {
+        var adomLock = this.GetADOMLock();
+
+        // Clean up records
+        try {
+            this.ExecScriptCleanUpMaxCount(adomLock);
+            this.ExecScriptCleanUpMaxTime(adomLock);
+        } catch (ex) {
+            this.utilSrv.GetAndLogExceptionObj(ex);
+            return;
+        }
+
+        try {
+            // Get one pending record to be processed at a time
+            var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+            // Workspace mode
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                gr.addQuery('number', '=', adomLock.Number);
+            }
+
+            gr.addQuery('sch_exec_script_status', '=', this.STATUS_INIT);
+            gr.addQuery('sch_create_script_status', '=', this.STATUS_DONE);
+            gr.orderBy('sys_updated_on');
+            gr.setLimit(1);
+            gr.query();
+
+            if (gr.next() !== true) {
+                return;
+            }
+
+            // is_cancelled
+            if (gr.getValue('is_cancelled') === '1') {
+                try {
+                    gr.setValue('sch_exec_script_status', this.STATUS_CANCELLED);
+                    if (gr.update() === null) {
+                        throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScript', 'Update record failed');
+                    }
+
+                    // Workspace mode - Release and reset ADOM lock
+                    if (this.isWorkspaceModeNormalEnabled === true) {
+                        this.ReleaseAndResetADOMLock(adomLock.ADOM);
+                    }
+                } catch (ex) {
+                    this.utilSrv.GetAndLogExceptionObj(ex);
+                }
+                return;
+            }
+
+            // Set status to running before proceed
+            var tryCount = Number(gr.getValue('sch_exec_script_count')) || 0;
+            tryCount++;
+
+            gr.setValue('sch_exec_script_status', this.STATUS_RUNNING);
+            gr.setValue('sch_exec_script_time', this.utilSrv.GetUnixTimestamp());
+            gr.setValue('sch_exec_script_count', tryCount);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScript', 'Update record failed');
+            }
+
+            // Prepare data
+            var number = gr.getValue('number');
+            var adom = gr.getValue('adom');
+            var script_name = gr.getValue('script_name');
+            var script_type = gr.getValue('script_type');
+            var policy_package = gr.getValue('policy_package');
+            var installation_device = gr.getValue('installation_device') ? JSON.parse(gr.getValue('installation_device')) : '';
+            var script_name_actual = gr.getValue('script_name_actual');
+
+            var execScriptBody = {
+                number: number,
+                name: script_name || '',
+                type: script_type || '',
+                adom: adom,
+            };
+
+            switch (execScriptBody.type) {
+                // ADOM database
+                case 'adom_database':
+                    execScriptBody.pkg = policy_package;
+                    break;
+                // Device database && Remote FortiGate
+                case 'device_database':
+                case 'remote_device':
+                    execScriptBody.scope = this.fmgApi.ConvDeviceArrToScope(installation_device);
+                    break;
+                default:
+                    throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScript', 'Invalid ExecScript script type: ' + execScriptBody.type);
+            }
+
+            // Exec script
+            var execScriptResponse = this.fmgApi.FMGAPI_ExecuteScript(execScriptBody, script_name_actual);
+            if (
+                execScriptResponse === null
+                || typeof execScriptResponse !== 'object'
+                || !('result' in execScriptResponse)
+                || !('0' in execScriptResponse.result)
+                || !('status' in execScriptResponse.result[0])
+                || !('code' in execScriptResponse.result[0].status)
+                || !('data' in execScriptResponse.result[0])
+                || !('httpStatus' in execScriptResponse.result[0].data)
+                || !('bodyObj' in execScriptResponse.result[0].data)
+                || !('result' in execScriptResponse.result[0].data.bodyObj)
+                || !('0' in execScriptResponse.result[0].data.bodyObj.result)
+                || !('data' in execScriptResponse.result[0].data.bodyObj.result[0])
+                || !('task' in execScriptResponse.result[0].data.bodyObj.result[0].data)
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScriptResponse', 'Response is invalid');
+            }
+
+            if (
+                execScriptResponse.result[0].status.code != 0
+                || execScriptResponse.result[0].data.httpStatus != 200
+                || !(execScriptResponse.result[0].data.bodyObj.result[0].data.task > 0)
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScriptResponse', 'Response failed');
+            }
+
+            // Done
+            gr.setValue('sch_exec_script_status', this.STATUS_DONE);
+            gr.setValue('exec_script_task_id', execScriptResponse.result[0].data.bodyObj.result[0].data.task);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScript', 'Update failed');
+            }
+        } catch (ex) {
+            // Reset
+            gr.setValue('sch_exec_script_status', this.STATUS_INIT);
+            gr.setValue('sch_exec_script_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'ExecScript', 'Update failed');
+            }
+
+            // Log error
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        }
+    },
+
+    DeleteScriptCleanUpMaxCount: function (adomLock) {
+        // Disable records that exceed max retry count
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_delete_script_status', '<', this.STATUS_DONE);
+        gr.addQuery('sch_delete_script_count', '>=', this.maxFetchCount);
+        gr.addQuery('sch_delete_script_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_delete_script_status', this.STATUS_TIMEOUT);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeleteScriptCleanUpMaxCount', 'Update failed');
+            }
+
+            // Workspace mode - Release and reset ADOM lock
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                this.ReleaseAndResetADOMLock(adomLock.ADOM);
+            }
+        }
+    },
+
+    DeleteScriptCleanUpMaxTime: function (adomLock) {
+        // Reset records that exceed max try time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_delete_script_status', '=', this.STATUS_RUNNING);
+        gr.addQuery('sch_delete_script_count', '<', this.maxFetchCount);
+        gr.addQuery('sch_delete_script_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_delete_script_status', this.STATUS_INIT);
+            gr.setValue('sch_delete_script_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeleteScriptCleanUpMaxTime', 'Update failed');
+            }
+        }
+    },
+
+    DeleteScript: function () {
+        if (gs.getProperty(this.currScopeName + '.fmg.isdeletescript') !== '1') {
+            return;
+        }
+
+        var adomLock = this.GetADOMLock();
+
+        // Clean up records
+        try {
+            this.DeleteScriptCleanUpMaxCount(adomLock);
+            this.DeleteScriptCleanUpMaxTime(adomLock);
+        } catch (ex) {
+            this.utilSrv.GetAndLogExceptionObj(ex);
+            return;
+        }
+
+        // Get one pending record to be processed at a time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        try {
+            // Workspace mode
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                gr.addQuery('number', '=', adomLock.Number);
+            }
+
+            gr.addQuery('sch_delete_script_status', '=', this.STATUS_INIT);
+            // gr.addQuery('sch_exec_script_status', '=', this.STATUS_DONE);
+            // NOTE: Mantis 792463 - FMG Direct CLI script takes a while to complete, if delete script API is send before execution is complete, error will occur in FMG side
+            gr.addQuery('sch_check_exec_status', '=', this.STATUS_DONE);
+            gr.orderBy('sys_updated_on');
+            gr.setLimit(1);
+            gr.query();
+
+            if (gr.next() !== true) {
+                return;
+            }
+
+            // Set status to running before proceed
+            var tryCount = Number(gr.getValue('sch_delete_script_count')) || 0;
+            tryCount++;
+
+            gr.setValue('sch_delete_script_status', this.STATUS_RUNNING);
+            gr.setValue('sch_delete_script_time', this.utilSrv.GetUnixTimestamp());
+            gr.setValue('sch_delete_script_count', tryCount);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeleteScript', 'Update failed');
+            }
+
+            // Prepare data
+            var adom = gr.getValue('adom');
+            var script_name_actual = gr.getValue('script_name_actual');
+
+            // Delete script
+            var deleteScriptResponse = this.fmgApi.FMGAPI_DeleteScript(adom, script_name_actual);
+
+            if (
+                deleteScriptResponse === null
+                || typeof deleteScriptResponse !== 'object'
+                || !('result' in deleteScriptResponse)
+                || !('0' in deleteScriptResponse.result)
+                || !('status' in deleteScriptResponse.result[0])
+                || !('code' in deleteScriptResponse.result[0].status)
+                || !('data' in deleteScriptResponse.result[0])
+                || !('httpStatus' in deleteScriptResponse.result[0].data)
+                || !('bodyObj' in deleteScriptResponse.result[0].data)
+                || !('result' in deleteScriptResponse.result[0].data.bodyObj)
+                || !('0' in deleteScriptResponse.result[0].data.bodyObj.result)
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeleteScriptResponse', 'Response is invalid');
+            }
+
+            if (
+                deleteScriptResponse.result[0].status.code != 0
+                || deleteScriptResponse.result[0].data.httpStatus != 200
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeleteScriptResponse', 'Response failed');
+            }
+
+            // Done
+            gr.setValue('sch_delete_script_status', this.STATUS_DONE);
+            if (gr.update() === null) {
+                throw new Error('DeleteScript update failed');
+            }
+        } catch (ex) {
+            // Reset
+            gr.setValue('sch_delete_script_status', this.STATUS_INIT);
+            gr.setValue('sch_delete_script_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeleteScript', 'Update failed');
+            }
+
+            // Log error
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        }
+    },
+
+    CheckExecCleanUpMaxCount: function (adomLock) {
+        // Disable records that exceed max retry count
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_check_exec_status', '<', this.STATUS_DONE);
+        gr.addQuery('sch_check_exec_count', '>=', this.maxFetchCount);
+        gr.addQuery('sch_check_exec_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_check_exec_status', this.STATUS_TIMEOUT);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExecCleanUpMaxCount', 'Update failed');
+            }
+
+            // Workspace mode - Release and reset ADOM lock
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                this.ReleaseAndResetADOMLock(adomLock.ADOM);
+            }
+        }
+    },
+
+    CheckExecCleanUpMaxTime: function (adomLock) {
+        // Reset records that exceed max try time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_check_exec_status', '=', this.STATUS_RUNNING);
+        gr.addQuery('sch_check_exec_count', '<', this.maxFetchCount);
+        gr.addQuery('sch_check_exec_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_check_exec_status', this.STATUS_INIT);
+            gr.setValue('sch_check_exec_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExecCleanUpMaxTime', 'Update failed');
+            }
+        }
+    },
+
+    CheckExec: function () {
+        var adomLock = this.GetADOMLock();
+
+        // Clean up records
+        try {
+            this.CheckExecCleanUpMaxCount(adomLock);
+            this.CheckExecCleanUpMaxTime(adomLock);
+        } catch (ex) {
+            this.utilSrv.GetAndLogExceptionObj(ex);
+            return;
+        }
+
+        // Get one pending record to be processed at a time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        try {
+            // Workspace mode
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                gr.addQuery('number', '=', adomLock.Number);
+            }
+
+            gr.addQuery('sch_check_exec_status', '=', this.STATUS_INIT);
+
+            // if (gs.getProperty(this.currScopeName + '.fmg.isdeletescript') !== '1') {
+            //     gr.addQuery('sch_exec_script_status', '=', this.STATUS_DONE);
+            // } else {
+            //     gr.addQuery('sch_delete_script_status', '=', this.STATUS_DONE);
+            // }
+
+            // NOTE: Mantis 792463 - should delete script until sch_check_exec_status is DONE
+            gr.addQuery('sch_exec_script_status', '=', this.STATUS_DONE);
+
+            gr.addQuery('exec_script_task_id', '>', 0);
+            gr.orderBy('sys_updated_on');
+            gr.setLimit(1);
+            gr.query();
+
+            if (gr.next() !== true) {
+                return;
+            }
+
+            // Set status to running before proceed
+            var tryCount = Number(gr.getValue('sch_check_exec_count')) || 0;
+            tryCount++;
+            gr.setValue('sch_check_exec_status', this.STATUS_RUNNING);
+            gr.setValue('sch_check_exec_time', this.utilSrv.GetUnixTimestamp());
+            gr.setValue('sch_check_exec_count', tryCount);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExec', 'Update failed');
+            }
+
+            // Prepare data
+            var exec_script_task_id = gr.getValue('exec_script_task_id');
+            var script_type = gr.getValue('script_type');
+
+            // Workspace mode
+            if (gr.getValue('is_adom_committed') === '0' && this.isWorkspaceModeNormalEnabled === true) {
+                switch (script_type) {
+                    case 'adom_database':
+                    case 'device_database':
+                        // Commit ADOM change
+                        if (this.CommitADOMChange(adomLock.ADOM) !== true) {
+                            throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExec', 'Commit ADOM Change failed');
+                        }
+
+                        gr.setValue('is_adom_committed', 1);
+                        if (gr.update() === null) {
+                            throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExec', 'Update failed');
+                        }
+
+                        break;
+                }
+            }
+            // Check exec
+            var checkExecResponse = this.fmgApi.FMGAPI_ExecuteScriptStatus(exec_script_task_id);
+            if (
+                checkExecResponse === null
+                || typeof checkExecResponse !== 'object'
+                || !('result' in checkExecResponse)
+                || !('0' in checkExecResponse.result)
+                || !('status' in checkExecResponse.result[0])
+                || !('code' in checkExecResponse.result[0].status)
+                || !('data' in checkExecResponse.result[0])
+                || !('httpStatus' in checkExecResponse.result[0].data)
+                || !('bodyObj' in checkExecResponse.result[0].data)
+                || !('result' in checkExecResponse.result[0].data.bodyObj)
+                || !('0' in checkExecResponse.result[0].data.bodyObj.result)
+                || !('data' in checkExecResponse.result[0].data.bodyObj.result[0])
+                || !('0' in checkExecResponse.result[0].data.bodyObj.result[0].data)
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExecResponse', 'Response is invalid');
+            }
+
+            if (
+                checkExecResponse.result[0].status.code != 0
+                || checkExecResponse.result[0].data.httpStatus != 200
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExecResponse', 'Response failed');
+            }
+
+            //
+            const percent = this.utilSrv.GetPropertyBasedOnNameOrArray('percent', 'line', checkExecResponse.result[0].data.bodyObj.result[0].data[0]);
+            const state = this.utilSrv.GetPropertyBasedOnNameOrArray('state', 'line', checkExecResponse.result[0].data.bodyObj.result[0].data[0]);
+            const history = this.utilSrv.GetPropertyBasedOnNameOrArray('history', 'line', checkExecResponse.result[0].data.bodyObj.result[0].data[0]);
+
+            if (!percent || !state || !history) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExecResponse', 'Response is missing percent or state or history');
+            }
+
+            // Done
+            gr.setValue('exec_script_percent', percent);
+            gr.setValue('exec_script_status', state);
+            gr.setValue('exec_script_summary', JSON.stringify(history));
+
+            if (checkExecResponse.result[0].data.bodyObj.result[0].data[0].percent === 100) {
+                gr.setValue('sch_check_exec_status', this.STATUS_DONE);
+            } else {
+                gr.setValue('sch_check_exec_status', this.STATUS_INIT);
+                gr.setValue('sch_check_exec_time', 0);
+            }
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExec', 'Update failed');
+            }
+
+            // Workspace mode
+            if (
+                this.isWorkspaceModeNormalEnabled === true
+                && checkExecResponse.result[0].data.bodyObj.result[0].data[0].percent === 100
+            ) {
+                switch (script_type) {
+                    case 'adom_database':
+                    case 'device_database':
+                        if (checkExecResponse.result[0].data.bodyObj.result[0].data[0].state !== 'done') {
+                            // Release and reset ADOM lock
+                            this.ReleaseAndResetADOMLock(adomLock.ADOM);
+                        }
+                        break;
+                    case 'remote_device':
+                        // Release and reset ADOM lock
+                        this.ReleaseAndResetADOMLock(adomLock.ADOM);
+                        break;
+                }
+            }
+        } catch (ex) {
+            // Reset
+            gr.setValue('sch_check_exec_status', this.STATUS_INIT);
+            gr.setValue('sch_check_exec_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckExec', 'Update failed');
+            }
+
+            // Log error
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        }
+    },
+
+    DeployCleanUpMaxCount: function (adomLock) {
+        // Disable records that exceed max retry count
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_deploy_status', '<', this.STATUS_DONE);
+        gr.addQuery('sch_deploy_count', '>=', this.maxFetchCount);
+        gr.addQuery('sch_deploy_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_deploy_status', this.STATUS_TIMEOUT);
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeployCleanUpMaxCount', 'Update failed');
+            }
+
+            // Workspace mode - Release and reset ADOM lock
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                this.ReleaseAndResetADOMLock(adomLock.ADOM);
+            }
+        }
+    },
+
+    DeployCleanUpMaxTime: function (adomLock) {
+        // Reset records that exceed max try time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_deploy_status', '=', this.STATUS_RUNNING);
+        gr.addQuery('sch_deploy_count', '<', this.maxFetchCount);
+        gr.addQuery('sch_deploy_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_deploy_status', this.STATUS_INIT);
+            gr.setValue('sch_deploy_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeployCleanUpMaxTime', 'Update failed');
+            }
+        }
+    },
+
+    Deploy: function () {
+        //
+        var adomLock = this.GetADOMLock();
+
+        // Clean up records
+        try {
+            this.DeployCleanUpMaxCount(adomLock);
+            this.DeployCleanUpMaxTime(adomLock);
+        } catch (ex) {
+            this.utilSrv.GetAndLogExceptionObj(ex);
+            return;
+        }
+
+        // Get one pending record to be processed at a time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        try {
+            // Workspace mode
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                gr.addQuery('number', '=', adomLock.Number);
+            }
+
+            gr.addQuery('sch_deploy_status', '=', this.STATUS_INIT);
+            gr.addQuery('sch_check_exec_status', '=', this.STATUS_DONE);
+            gr.addQuery('script_type', 'IN', 'adom_database, device_database');
+            gr.addQuery('exec_script_status', '=', 'done');
+            gr.orderBy('sys_updated_on');
+            gr.setLimit(1);
+            gr.query();
+
+            if (gr.next() !== true) {
+                return;
+            }
+
+            // is_cancelled
+            if (gr.getValue('is_cancelled') === '1') {
+                try {
+                    gr.setValue('sch_deploy_status', this.STATUS_CANCELLED);
+
+                    if (gr.update() === null) {
+                        throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'Deploy', 'Update failed');
+                    }
+
+                    // Workspace mode - Release and reset ADOM lock
+                    if (this.isWorkspaceModeNormalEnabled === true) {
+                        this.ReleaseAndResetADOMLock(adomLock.ADOM);
+                    }
+                } catch (ex) {
+                    // Log error
+                    this.utilSrv.GetAndLogExceptionObj(ex);
+                }
+
+                return;
+            }
+
+            // Set status to running before proceed
+            var tryCount = Number(gr.getValue('sch_deploy_count')) || 0;
+            tryCount++;
+
+            gr.setValue('sch_deploy_status', this.STATUS_RUNNING);
+            gr.setValue('sch_deploy_time', this.utilSrv.GetUnixTimestamp());
+            gr.setValue('sch_deploy_count', tryCount);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'Deploy', 'Update failed');
+            }
+
+            // Prepare data
+            var adom = gr.getValue('adom');
+            var script_type = gr.getValue('script_type') || '';
+            var policy_package = gr.getValue('policy_package');
+            var installation_device = gr.getValue('installation_device') ? JSON.parse(gr.getValue('installation_device')) : '';
+            var scope = this.fmgApi.ConvDeviceArrToScope(installation_device);
+
+            // Deploy
+            var deployResponse = null;
+
+            switch (script_type) {
+                // ADOM database
+                case 'adom_database':
+                    deployResponse = this.fmgApi.FMGAPI_DeployPolicy(adom, policy_package, scope);
+                    break;
+                // Device database
+                case 'device_database':
+                    deployResponse = this.fmgApi.FMGAPI_DeployDevice(adom, scope);
+                    break;
+                default:
+                    throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'Deploy', 'Invalid Deploy script type: ' + script_type);
+            }
+
+            if (
+                deployResponse === null
+                || typeof deployResponse !== 'object'
+                || !('result' in deployResponse)
+                || !('0' in deployResponse.result)
+                || !('status' in deployResponse.result[0])
+                || !('code' in deployResponse.result[0].status)
+                || !('data' in deployResponse.result[0])
+                || !('httpStatus' in deployResponse.result[0].data)
+                || !('bodyObj' in deployResponse.result[0].data)
+                || !('result' in deployResponse.result[0].data.bodyObj)
+                || !('0' in deployResponse.result[0].data.bodyObj.result)
+                || !('data' in deployResponse.result[0].data.bodyObj.result[0])
+                || !('task' in deployResponse.result[0].data.bodyObj.result[0].data)
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeployResponse', 'Response is invalid');
+            }
+
+            if (
+                deployResponse.result[0].status.code != 0
+                || deployResponse.result[0].data.httpStatus != 200
+                || !(deployResponse.result[0].data.bodyObj.result[0].data.task > 0)
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'DeployResponse', 'Response failed');
+            }
+
+            // Done
+            gr.setValue('sch_deploy_status', this.STATUS_DONE);
+            gr.setValue('deploy_task_id', deployResponse.result[0].data.bodyObj.result[0].data.task);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'Deploy', 'Update failed');
+            }
+        } catch (ex) {
+            // Reset
+            gr.setValue('sch_deploy_status', this.STATUS_INIT);
+            gr.setValue('sch_deploy_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'Deploy', 'Update failed');
+            }
+
+            // Log error
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        }
+    },
+
+    CheckDeployCleanUpMaxCount: function (adomLock) {
+        // Disable records that exceed max retry count
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_check_deploy_status', '<', this.STATUS_DONE);
+        gr.addQuery('sch_check_deploy_count', '>=', this.maxFetchCount);
+        gr.addQuery('sch_check_deploy_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_check_deploy_status', this.STATUS_TIMEOUT);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckDeployCleanUpMaxCount', 'Update failed');
+            }
+
+            // Workspace mode - Release and reset ADOM lock
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                this.ReleaseAndResetADOMLock(adomLock.ADOM);
+            }
+        }
+    },
+
+    CheckDeployCleanUpMaxTime: function (adomLock) {
+        // Reset records that exceed max try time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        // Workspace mode
+        if (this.isWorkspaceModeNormalEnabled === true) {
+            gr.addQuery('number', '=', adomLock.Number);
+        }
+
+        gr.addQuery('sch_check_deploy_status', '=', this.STATUS_RUNNING);
+        gr.addQuery('sch_check_deploy_count', '<', this.maxFetchCount);
+        gr.addQuery('sch_check_deploy_time', '<', this.CurrMinusTryTime());
+        gr.query();
+
+        while (gr.next()) {
+            gr.setValue('sch_check_deploy_status', this.STATUS_INIT);
+            gr.setValue('sch_check_deploy_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckDeployCleanUpMaxTime', 'Update failed');
+            }
+        }
+    },
+
+    CheckDeploy: function () {
+        //
+        var adomLock = this.GetADOMLock();
+
+        // Clean up records
+        try {
+            this.CheckDeployCleanUpMaxCount(adomLock);
+            this.CheckDeployCleanUpMaxTime(adomLock);
+        } catch (ex) {
+            this.utilSrv.GetAndLogExceptionObj(ex);
+            return;
+        }
+
+        // Get one pending record to be processed at a time
+        var gr = new GlideRecordSecure(this.currScopeName + '_fmg_script');
+
+        try {
+            // Workspace mode
+            if (this.isWorkspaceModeNormalEnabled === true) {
+                gr.addQuery('number', '=', adomLock.Number);
+            }
+
+            gr.addQuery('sch_check_deploy_status', '=', this.STATUS_INIT);
+            gr.addQuery('sch_deploy_status', '=', this.STATUS_DONE);
+            gr.addQuery('deploy_task_id', '>', 0);
+            gr.orderBy('sys_updated_on');
+            gr.setLimit(1);
+            gr.query();
+
+            if (gr.next() !== true) {
+                return;
+            }
+
+            // Set status to running before proceed
+            var tryCount = Number(gr.getValue('sch_check_deploy_count')) || 0;
+            tryCount++;
+
+            gr.setValue('sch_check_deploy_status', this.STATUS_RUNNING);
+            gr.setValue('sch_check_deploy_time', this.utilSrv.GetUnixTimestamp());
+            gr.setValue('sch_check_deploy_count', tryCount);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckDeploy', 'Update failed');
+            }
+
+            // Prepare data
+            var deploy_task_id = gr.getValue('deploy_task_id');
+            var script_type = gr.getValue('script_type');
+
+            // Check deploy
+            var checkDeployResponse = this.fmgApi.FMGAPI_ExecuteScriptStatus(deploy_task_id);
+            if (
+                checkDeployResponse === null
+                || typeof checkDeployResponse !== 'object'
+                || !('result' in checkDeployResponse)
+                || !('0' in checkDeployResponse.result)
+                || !('status' in checkDeployResponse.result[0])
+                || !('code' in checkDeployResponse.result[0].status)
+                || !('data' in checkDeployResponse.result[0])
+                || !('httpStatus' in checkDeployResponse.result[0].data)
+                || !('bodyObj' in checkDeployResponse.result[0].data)
+                || !('result' in checkDeployResponse.result[0].data.bodyObj)
+                || !('0' in checkDeployResponse.result[0].data.bodyObj.result)
+                || !('data' in checkDeployResponse.result[0].data.bodyObj.result[0])
+                || !('0' in checkDeployResponse.result[0].data.bodyObj.result[0].data)
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckDeployResponse', 'Response is invalid');
+            }
+
+            if (
+                checkDeployResponse.result[0].status.code != 0
+                || checkDeployResponse.result[0].data.httpStatus != 200
+            ) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckDeployResponse', 'Response failed');
+            }
+
+            //
+            const percent = this.utilSrv.GetPropertyBasedOnNameOrArray('percent', 'line', checkDeployResponse.result[0].data.bodyObj.result[0].data[0]);
+            const state = this.utilSrv.GetPropertyBasedOnNameOrArray('state', 'line', checkDeployResponse.result[0].data.bodyObj.result[0].data[0]);
+            const history = this.utilSrv.GetPropertyBasedOnNameOrArray('history', 'line', checkDeployResponse.result[0].data.bodyObj.result[0].data[0]);
+
+            if (!percent || !state || !history) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckDeployResponse', 'Response is missing percent or state or history');
+            }
+
+
+            // Done
+            gr.setValue('deploy_percent', percent);
+            gr.setValue('deploy_status', state);
+            gr.setValue('deploy_summary', JSON.stringify(history));
+
+            if (checkDeployResponse.result[0].data.bodyObj.result[0].data[0].percent === 100) {
+                gr.setValue('sch_check_deploy_status', this.STATUS_DONE);
+            } else {
+                gr.setValue('sch_check_deploy_status', this.STATUS_INIT);
+                gr.setValue('sch_check_deploy_time', 0);
+            }
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckDeploy', 'Update failed');
+            }
+
+            // Workspace mode
+            if (
+                this.isWorkspaceModeNormalEnabled === true
+                && checkDeployResponse.result[0].data.bodyObj.result[0].data[0].percent === 100
+            ) {
+                switch (script_type) {
+                    case 'adom_database':
+                    case 'device_database':
+                        // Release and reset ADOM lock
+                        this.ReleaseAndResetADOMLock(adomLock.ADOM);
+                        break;
+                }
+            }
+        } catch (ex) {
+            // Reset
+            gr.setValue('sch_check_deploy_status', this.STATUS_INIT);
+            gr.setValue('sch_check_deploy_time', 0);
+
+            if (gr.update() === null) {
+                throw this.utilSrv.GenerateCustomizedError(gr.getValue('number'), 'CheckDeploy', 'Update failed');
+            }
+
+            // Log error
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        }
+    },
+    type: 'FMGAppExecution',
+};]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-12-06 23:05:43</sys_created_on>
+        <sys_id>fd49765cdb5aaf00310473e1ba9619df</sys_id>
+        <sys_mod_count>124</sys_mod_count>
+        <sys_name>FMGAppExecution</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_script_include_fd49765cdb5aaf00310473e1ba9619df</sys_update_name>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2022-03-25 00:06:47</sys_updated_on>
+    </sys_script_include>
+</record_update>

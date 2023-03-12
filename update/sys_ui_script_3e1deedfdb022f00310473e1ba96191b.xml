@@ -1,0 +1,2232 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ui_script">
+    <sys_ui_script action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <description/>
+        <global>false</global>
+        <name>x_forti_fmgintgv2.app_fmg_script</name>
+        <script><![CDATA[/* global jQuery GlideAjax Vue iview UtilCli */
+
+(function ($jq, GlideAjax, Vue, iview, UtilCli) {
+    $jq(document).ready(function () {
+        InitVue();
+    });
+
+    function InitVue() {
+        // RELEASE: Disable begugger if releasing
+        Vue.config.debug = false;
+
+        // Init Config
+        iview.lang('en-US');
+
+        // Global filters
+        Vue.filter('pretty', function (value) {
+            return JSON.stringify(value, null, 2);
+        });
+
+        // Create script component
+        Vue.component('create-script', {
+            template: `
+<Modal
+    v-model="isCreateScriptWindowOpened"
+    fullscreen="true"
+    :closable="false"
+    :mask-closable="false"
+>
+    <!-- NOTE: Header -->
+    <div slot="header">
+        <Button @click.prevent="handleCreateScriptCloseBtn">Close</Button>
+    </div>
+
+    <!-- NOTE: Body -->
+    <div>
+        <div>
+            <h3>New Change</h3>
+            <br/>
+            <br/>
+            <Steps :current="current_step">
+                <Step title="Change Description"></Step>
+                <Step title="Select ADOM"></Step>
+                <Step title="Select Script"></Step>
+                <Step title="Set Variables"></Step>
+                <Step title="Select Devices"></Step>
+            </Steps>
+            <br/>
+            <br/>
+            <div>
+                <Form
+                    :label-width="200"
+                    label-position="right">
+
+                    <!-- NOTE: Step 1 - Change Description -->
+                    <Row v-if="current_step == 0">
+                        <Col span="20" offset="4">
+                            <FormItem
+                                required="true"
+                                label="Customized Script Description">
+                                <Input v-model="scriptDescr" type="textarea" :autosize="{minRows: 8}" style="width:400px;" />
+                            </FormItem>
+                        </Col>
+                    </Row>
+
+                    <!-- NOTE: Step 2 - Select ADOM -->
+                    <Row v-if="current_step == 1">
+                        <Col span="20" offset="4">
+                            <FormItem required="true" label="FortiManager ADOM">
+                                <Select
+                                    :disabled="adomDisabled"
+                                    v-model="adomSelected"
+                                    style="width:200px"
+                                    @on-change="getFMGAPIScriptList">
+                                    <Option v-for="item in adomParentSysProp"
+                                        :value="item"
+                                        :key="item">{{ item }}</Option>
+                                </Select>
+                            </FormItem>
+                        </Col>
+                    </Row>
+
+                    <!-- NOTE: Step 3 - Select Script -->
+                    <Row v-if="current_step == 2">
+                        <Col span="20" offset="4">
+                            <FormItem required="true" label="FortiManager Script">
+                                <Select v-model="FMGscriptIndexSelected" @on-change="getFMGCustomizedScriptForm" style="width:200px">
+                                                    <Option v-for="(item, index) in APIScriptList" :value="index" :key="index">{{ item.name }}</Option>
+                                                </Select>
+                            </FormItem>
+                        </Col>
+                    </Row>
+
+                    <!-- NOTE: Step 4 - Input Variable -->
+                    <Row v-if="current_step == 3">
+                        <Col span="8" offset="4">
+                            <div v-if="customizedScriptContentArray.length == 0">
+                                <p><b>No Customized Variables Found</b></p>
+                            </div>
+
+                            <div v-if="customizedScriptContentArray.length > 0">
+                                </br>
+                                <FormItem v-for="(item, key) in customizedScriptContentArray">
+                                    <span slot="label">
+                                        <Tooltip content="FortiManager script variable">
+                                            {{ item.fieldname }}
+                                            <Icon type="ios-help-circle-outline" size="14">Customized Script Variable</Icon>
+                                        </Tooltip>
+                                    </span>
+                                    <Input @input="buildDraftScript(item.variable, item.value)"
+                                        v-model="item.value"
+                                        style="width: auto">
+                                    </Input>
+                                </FormItem>
+
+                                <p style="font-size: 15px;">* Enclose the content in quotes if it contains spaces</p>
+                            </div>
+                        </Col>
+                        <Col span="12">
+                            <p><b>Preview</b></p>
+                            <Input readonly="readonly" v-model="draftScript" type="textarea" :autosize="{minRows: 8}" style="width:400px;" />
+                        </Col>
+                    </Row>
+
+                    <!-- NOTE: Step 5 - Select Installation Target -->
+                    <Row v-if="current_step == 4 && template_target === 'adom_database'">
+                        <Col span="20" offset="4">
+                            <FormItem>
+                                <span slot="label">
+                                    <Tooltip content="FortiManager Policy Package">
+                                        FortiManager Policy Package
+                                        <Icon type="ios-help-circle-outline" size="14"></Icon>
+                                    </Tooltip>
+                                </span>
+                                <Select v-model="FMGPolicyPackageSelected" style="width:200px">
+                                    <Option v-for="(item, index) in APIPolicyPKGList"
+                                        :value="item.name"
+                                        :key="index">{{ item.name }}</Option>
+                                </Select>
+                            </FormItem>
+                        </Col>
+                    </Row>
+                    <Row v-if="current_step == 4">
+                        <Col span="20" offset="4">
+                            <FormItem>
+                                <span slot="label">
+                                    <Tooltip content="FortiManager Devices">
+                                        FortiManager Devices
+                                        <Icon type="ios-help-circle-outline" size="14"></Icon>
+                                    </Tooltip>
+                                </span>
+                                <Select
+                                    multiple
+                                    v-model="FMGDeviceSelected"
+                                    style="width:300px">
+                                    <Option v-for="(item, index) in APIDeviceList"
+                                        :value="item.name"
+                                        :key="index">{{ item.name }}</Option>
+                                </Select>
+                                <Button @click.prevent="selectAllDevices">Select All</Button>
+                            </FormItem>
+                        </Col>
+                    </Row>
+                </Form>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOTE: Footer -->
+    <div slot="footer">
+        <Row>
+            <Col span="12" align="left">
+                <Button type="primary"
+                    @click.prevent="previousStep"
+                    :disabled="current_step == 0">Previous</Button>
+                <Button type="primary"
+                    @click.prevent="nextStep"
+                    :disabled="determineStepButtonDisabled"
+                    :loading="step_button_loader">Next</Button>
+            </Col>
+            <Col span="12" align="right">
+                <Button type="primary"
+                    @click.prevent="saveProgress"
+                    :disabled="progress_button_loader || this.scriptDescr.length == 0"
+                    :loading="progress_button_loader">Save</Button>
+                <Button type="primary"
+                    @click.prevent="submitProgress"
+                    :disabled="determineExecuteButtonDisabled"
+                    :loading="progress_button_loader">Submit</Button>
+            </Col>
+        </Row>
+    </div>
+</Modal>
+            `,
+            data: function () {
+                return {
+                    adomDisabled: false,
+                    isScriptParentData: false,
+                    scriptNumber: '',
+                    scriptName: '',
+                    scriptDescr: '',
+                    step_button_loader: false,
+                    progress_button_loader: false,
+                    isCreateScriptWindowOpened: true,
+                    current_step: 0,
+                    adomSelected: '',
+                    // TODO: Using the selected index seems to work. But, it's advised to use ID or ScriptName instead?
+                    FMGscriptIndexSelected: '',
+                    step_button_disabled: true,
+                    previous_step_button_disabled: false,
+                    customizedScriptContentArray: [],
+                    originalScriptContent: '',
+                    template_target: '',
+                    draftScript: '',
+                    APIScriptList: [],
+                    APIDeviceList: [],
+                    APIPolicyPKGList: [],
+                    FMGDeviceSelected: [],
+                    FMGPolicyPackageSelected: '',
+                    IsExecuting: 0,
+                    ExecutionRetryCount: 0,
+                    IsCheckingStatus: 0,
+                    StatusRetryCount: 0,
+                    execScriptTaskID: 0,
+                    execScriptPercent: 0,
+                };
+            },
+            computed: {
+                determineStepButtonDisabled() {
+                    switch (this.current_step) {
+                        case 0:
+                            return !this.isValidScriptDesription();
+                        case 3:
+                            return !this.isValidCustomizedScript();
+                        default:
+                            return this.step_button_disabled;
+                    }
+                },
+
+                determineExecuteButtonDisabled() {
+                    var res = false;
+
+                    if (this.progress_button_loader === true) {
+                        res = true;
+                    }
+
+                    // Validation - step 1
+                    if (!this.isValidScriptDesription()) {
+                        res = true;
+                    }
+
+                    // Validation - step 2
+                    if (!this.isValidAdom()) {
+                        res = true;
+                    }
+
+                    // Validation - step 3
+                    if (!this.isValidScriptTemplate()) {
+                        res = true;
+                    }
+
+                    // Validation - step 4
+                    if (!this.isValidCustomizedScript()) {
+                        res = true;
+                    }
+
+                    // Validation - step 5
+                    if (!this.isValidDevice()) {
+                        res = true;
+                    }
+
+                    return res;
+                }
+            },
+            methods: {
+                /*
+                * Validation for step 1
+                */
+                isValidScriptDesription() {
+                    var res = false;
+                    // ! checks for '' and null and undefined and NaN but does not account for [], {}
+                    if (this.scriptDescr && this.scriptDescr.length > 0) {
+                        res = true;
+                    }
+                    return res;
+                },
+
+                /*
+                * Validation for step 2
+                */
+                // ! checks for '' and null and undefined and NaN but does not account for [], {}
+                isValidAdom() {
+                    var res = false;
+                    if (this.adomSelected) {
+                        if (this.adomParentSysProp.length > 0) {
+                            var foundSelectedADOM = false;
+                            for (var i = 0; i < this.adomParentSysProp.length; i++) {
+                                if (this.adomSelected === this.adomParentSysProp[i]) {
+                                    foundSelectedADOM = true;
+                                }
+                            }
+                            if (foundSelectedADOM) {
+                                res = true;
+                            }
+                        }
+                    }
+                    return res;
+                },
+
+                /*
+                * Validation for step 3
+                */
+                // ! checks for '' and null and undefined and NaN but does not account for [], {}
+                isValidScriptTemplate() {
+                    var res = false;
+                    if (this.FMGscriptIndexSelected || this.FMGscriptIndexSelected == 0) {
+                        res = true;
+                    }
+                    return res;
+                },
+
+                /*
+                * Validation for step 4
+                */
+                // ! (! this.var) ensure the var is not null not undefined and not ''
+                isValidCustomizedScript() {
+                    var res = true;
+                    if (this.customizedScriptContentArray && this.customizedScriptContentArray.length) {
+                        var valid = true;
+
+                        for (var i = 0; i < this.customizedScriptContentArray.length; i++) {
+                            if (this.customizedScriptContentArray[i]['value'] === '') {
+                                valid = false;
+                                break;
+                            }
+                        }
+
+                        res = valid;
+                    }
+                    return res;
+                },
+
+                /*
+                * Validation for step 5
+                */
+                isValidDevice() {
+                    var res = true;
+                    if (this.template_target === 'adom_database') {
+                        if (!this.FMGPolicyPackageSelected) {
+                            res = false;
+                        }
+                    } else {
+                        // ! checks for '' and null and undefined and NaN but does not account for [], {}
+                        if (!this.FMGDeviceSelected || this.FMGDeviceSelected.length === 0) {
+                            res = false;
+                        }
+                    }
+                    return res;
+                },
+
+                /*
+                * Save progress of script(update if exsits, else create)
+                */
+                saveProgress() {
+                    if (this.progress_button_loader === true) {
+                        return;
+                    }
+                    this.progress_button_loader = true;
+
+                    this.submitScript(0);
+                },
+
+                /*
+                * Submit Progress
+                */
+                submitProgress() {
+                    if (this.progress_button_loader === true) {
+                        return;
+                    }
+                    this.progress_button_loader = true;
+
+                    // Validation - step 1
+                    if (!this.isValidScriptDesription()) {
+                        this.$Message.error({
+                            content: 'Script description is required',
+                            duration: 30,
+                            closable: true,
+                        });
+
+                        this.progress_button_loader = false;
+                        return;
+                    }
+
+                    // Validation - step 2
+                    if (!this.isValidAdom()) {
+                        this.$Message.error({
+                            content: 'ADOM is required',
+                            duration: 30,
+                            closable: true,
+                        });
+                        this.progress_button_loader = false;
+                        return;
+                    }
+
+                    // Validation - step 3
+                    if (!this.isValidScriptTemplate()) {
+                        this.$Message.error({
+                            content: 'Script must be selected',
+                            duration: 30,
+                            closable: true,
+                        });
+
+                        this.progress_button_loader = false;
+                        return;
+                    }
+
+                    // Validation - step 4
+                    if (!this.isValidCustomizedScript()) {
+                        this.$Message.error({
+                            content: 'All variables must be set in the Input Variables section',
+                            duration: 30,
+                            closable: true,
+                        });
+                        this.progress_button_loader = false;
+                        return;
+                    }
+
+                    // Validation - step 5
+                    if (this.template_target === 'adom_database') {
+                        if (!this.FMGPolicyPackageSelected) {
+                            this.$Message.error({
+                                content: 'Policy package is required',
+                                duration: 30,
+                                closable: true,
+                            });
+
+                            this.progress_button_loader = false;
+                            return;
+                        }
+                    } else {
+                        // ! checks for '' and null and undefined and NaN but does not account for [], {}
+                        if (!this.FMGDeviceSelected || this.FMGDeviceSelected.length === 0) {
+                            this.$Message.error({
+                                content: 'Installation device is required',
+                                duration: 30,
+                                closable: true,
+                            });
+
+                            this.progress_button_loader = false;
+                            return;
+                        }
+                    }
+
+                    this.submitScript(1);
+                },
+
+                /*
+                * Make Ajax Call to Create/Update script
+                * @param boolean draft_flag indicating whether the script to be submitted is in draft state
+                */
+                submitScript(is_submitted) {
+                    // Make data to be submitted through AJAX
+                    var convRequestObj = {
+                        u_adom: '',
+                        u_script_name: this.scriptName,
+                        u_script_type: '',
+                        u_description: '',
+                        u_device_list: '',
+                        u_installation_device: '',
+                        u_is_submitted: is_submitted,
+                        u_policy_package: '',
+                        u_policy_package_list: '',
+                        u_script_content: '',
+                        u_script_content_configured: '',
+                        u_script_conte_gured_progress: '',
+                        u_script_index_selected: '',
+                        u_script_list: '',
+                    };
+
+                    // if (a) Checks for not null not undefined not NaN not '', 0
+                    // does not account for {} []
+                    if (this.scriptNumber) {
+                        convRequestObj.u_number = this.scriptNumber;
+                    }
+
+                    if (this.FMGscriptIndexSelected || this.FMGscriptIndexSelected === 0) {
+                        convRequestObj.u_script_index_selected = this.FMGscriptIndexSelected;
+                    }
+
+                    if (this.scriptDescr) {
+                        convRequestObj.u_description = this.scriptDescr;
+                    }
+
+                    if (this.adomSelected) {
+                        convRequestObj.u_adom = this.adomSelected;
+                    }
+
+                    if (this.template_target) {
+                        convRequestObj.u_script_type = this.template_target;
+                    }
+
+                    if (this.draftScript) {
+                        convRequestObj.u_script_content_configured = this.draftScript;
+                    }
+
+                    if (this.originalScriptContent) {
+                        convRequestObj.u_script_content = this.originalScriptContent;
+                    }
+                    // if (a) Checks for not null not undefined not NaN not '', 0
+                    // does not account for {} []
+                    if (this.customizedScriptContentArray && this.customizedScriptContentArray.length) {
+                        convRequestObj.u_script_conte_gured_progress = JSON.stringify(this.customizedScriptContentArray);
+                    }
+
+                    if (this.FMGPolicyPackageSelected) {
+                        convRequestObj.u_policy_package = this.FMGPolicyPackageSelected;
+                    }
+
+                    if (this.FMGDeviceSelected && this.FMGDeviceSelected.length) {
+                        convRequestObj.u_installation_device = JSON.stringify(this.FMGDeviceSelected);
+                    }
+
+                    if (this.APIScriptList && this.APIScriptList.length) {
+                        convRequestObj.u_script_list = JSON.stringify(this.APIScriptList);
+                    }
+
+                    if (this.APIDeviceList && this.APIDeviceList.length) {
+                        convRequestObj.u_device_list = JSON.stringify(this.APIDeviceList);
+                    }
+
+                    if (this.APIPolicyPKGList && this.APIPolicyPKGList.length) {
+                        convRequestObj.u_policy_package_list = JSON.stringify(this.APIPolicyPKGList);
+                    }
+
+                    var ga = new GlideAjax('FMGJSONRPC');
+                    ga.addParam('sysparm_name', 'FMGCreateCustomizedScript');
+                    ga.addParam('sysparm_convRequestString', JSON.stringify(convRequestObj));
+                    ga.setErrorCallback(JSONRPC_ErrorMessage.bind({ vm: this }));
+                    ga.getXMLAnswer(JSONRPC_FMGCreateCustomizedScript.bind({ vm: this }));
+                },
+
+                /*
+                * GET FMGAPI Script Lists from JSONRPC - FMGAPIScriptListInfo() function.
+                * This function should only be triggered by form change
+                */
+                getFMGAPIScriptList(event) {
+                    // Only trigger for form event
+                    if (event) {
+                        // Reset all data (In case want to trigger a submit)
+                        this.resetScriptData(1);
+
+                        // Change the status of btn
+                        this.step_button_loader = true;
+
+                        var ga = new GlideAjax('FMGJSONRPC');
+                        ga.addParam('sysparm_name', 'FMGAPIScriptListInfo');
+                        ga.addParam('sysparm_adom', this.adomSelected);
+                        ga.setErrorCallback(JSONRPC_ErrorMessage.bind({ vm: this }));
+                        ga.getXMLAnswer(JSONRPC_FMGAPIScriptListInfo.bind({ vm: this }));
+                    }
+                },
+
+                /*
+                * Build the form inputs from a selected FMG script
+                */
+                getFMGCustomizedScriptForm() {
+                    // Reset script name
+                    this.scriptName = '';
+
+                    if (this.FMGscriptIndexSelected || this.FMGscriptIndexSelected === 0) {
+
+                        // Reset
+                        this.resetScriptData(2);
+
+                        // Change the status of btn
+                        this.step_button_loader = true;
+
+                        // Get current script
+                        this.originalScriptContent = this.APIScriptList[this.FMGscriptIndexSelected].content;
+
+                        // Set script name
+                        this.scriptName = this.APIScriptList[this.FMGscriptIndexSelected].name;
+
+                        // Init
+                        this.customizedScriptContentArray = [];
+                        this.draftScript = this.originalScriptContent;
+
+                        // Get selected index tempalte target
+                        this.template_target = this.APIScriptList[this.FMGscriptIndexSelected].target;
+
+                        //
+                        var regex = /\$[{]([a-zA-Z0-9_]+)[}]/gm;
+                        var m;
+
+                        while ((m = regex.exec(this.originalScriptContent)) !== null) {
+                            var data_obj = {};
+
+                            // This is necessary to avoid infinite loops with zero-width matches
+                            if (m.index === regex.lastIndex) {
+                                regex.lastIndex++;
+                            }
+
+                            // The result can be accessed through the `m`-variable.
+                            m.forEach((match, groupIndex) => {
+                                if (groupIndex === 0) {
+                                    data_obj.variable = match;
+                                } else {
+                                    data_obj.fieldname = match;
+                                    data_obj.value = '';
+                                }
+                            });
+
+                            if (!Is_Variable_Existing(this.customizedScriptContentArray, data_obj)) {
+                                this.customizedScriptContentArray.push(data_obj);
+                            }
+                        }
+
+                        this.step_button_loader = false;
+                        this.step_button_disabled = false;
+
+                        // GET selected templates installtation device name or policy package
+                        this.getFMGAPIInstallationTargets();
+                    }
+
+                    /* to-be-deleted
+                    else {
+                        // GET selected templates installtation device name or policy package
+                        this.getFMGAPIInstallationTargets();
+                    }
+                    */
+                },
+
+                /*
+                * Build the draft script for user preview and submission
+                */
+                buildDraftScript() {
+                    // Assign to original script
+                    this.draftScript = this.originalScriptContent;
+
+                    if (this.draftScript.length && this.customizedScriptContentArray.length) {
+                        for (var i = 0; i < this.customizedScriptContentArray.length; i++) {
+                            // Only proceed if there is a value
+                            if (this.customizedScriptContentArray[i].value) {
+                                while (this.draftScript.includes(this.customizedScriptContentArray[i].variable)) {
+                                    this.draftScript = this.draftScript.replace(this.customizedScriptContentArray[i].variable, this.customizedScriptContentArray[i].value);
+                                }
+                            }
+                        }
+                    }
+                },
+
+                /*
+                * This function is triggered by script select on change only/
+                * This function builds the policy package form input from a selected FMG script when trigged by select on change
+                */
+                getFMGAPIInstallationTargets() {
+                    if (this.adomSelected !== '') {
+                        if (this.template_target === 'adom_database') {
+                            if (this.APIPolicyPKGList.length === 0) {
+                                var ga = new GlideAjax('FMGJSONRPC');
+                                ga.addParam('sysparm_name', 'FMGAPIPolicyPKGList');
+                                ga.addParam('sysparm_adom', this.adomSelected);
+                                ga.setErrorCallback(JSONRPC_ErrorMessage.bind({ vm: this }));
+                                ga.getXMLAnswer(JSONRPC_FMGAPIPolicyPKGList.bind({ vm: this }));
+                            }
+                        }
+
+                        if (this.APIDeviceList.length === 0) {
+                            var ga = new GlideAjax('FMGJSONRPC');
+                            ga.addParam('sysparm_name', 'FMGAPIDeviceList');
+                            ga.addParam('sysparm_adom', this.adomSelected);
+                            ga.setErrorCallback(JSONRPC_ErrorMessage.bind({ vm: this }));
+                            ga.getXMLAnswer(JSONRPC_FMGAPIDeviceList.bind({ vm: this }));
+                        }
+                    }
+                },
+
+                /*
+                * Reset Script data to default values except for adoms
+                * @param int starting_step indicate the starting step to reset different kinds of values
+                */
+                resetScriptData(starting_step) {
+                    switch (starting_step) {
+                        case 1:
+                            this.APIScriptList = [];
+                            this.FMGscriptIndexSelected = '';
+
+                            this.customizedScriptContentArray = [];
+                            this.originalScriptContent = '';
+                            this.template_target = '';
+                            this.draftScript = '';
+                            this.APIDeviceList = [];
+                            this.APIPolicyPKGList = [];
+                            this.FMGDeviceSelected = '';
+                            this.FMGPolicyPackageSelected = '';
+                            break;
+
+                        case 2:
+                            this.customizedScriptContentArray = [];
+                            this.originalScriptContent = '';
+                            this.template_target = '';
+                            this.draftScript = '';
+                            this.APIDeviceList = [];
+                            this.APIPolicyPKGList = [];
+                            this.FMGDeviceSelected = '';
+                            this.FMGPolicyPackageSelected = '';
+                            break;
+
+                        // ADOM mis match
+                        case 400:
+                            this.adomSelected = '';
+                            this.FMGscriptIndexSelected = '';
+                            this.step_button_disabled = true;
+                            this.customizedScriptContentArray = [];
+                            this.originalScriptContent = '';
+                            this.template_target = '';
+                            this.draftScript = '';
+                            this.APIScriptList = [];
+                            this.APIDeviceList = [];
+                            this.APIPolicyPKGList = [];
+                            this.FMGDeviceSelected = [];
+                            this.FMGPolicyPackageSelected = '';
+                            break;
+
+                        // Script mis match (no API data returned)
+                        case 401:
+                            this.FMGscriptIndexSelected = '';
+                            this.step_button_disabled = true;
+                            this.customizedScriptContentArray = [];
+                            this.originalScriptContent = '';
+                            this.template_target = '';
+                            this.draftScript = '';
+                            this.APIScriptList = [];
+                            this.APIDeviceList = [];
+                            this.APIPolicyPKGList = [];
+                            this.FMGDeviceSelected = [];
+                            this.FMGPolicyPackageSelected = '';
+                            break;
+
+                        // Script mis match (saved script deleted or content has changed)
+                        case 402:
+                            this.FMGscriptIndexSelected = '';
+                            this.step_button_disabled = true;
+                            this.customizedScriptContentArray = [];
+                            this.originalScriptContent = '';
+                            this.template_target = '';
+                            this.draftScript = '';
+                            this.APIDeviceList = [];
+                            this.APIPolicyPKGList = [];
+                            this.FMGDeviceSelected = [];
+                            this.FMGPolicyPackageSelected = '';
+                            break;
+
+                        // Policy package or installation devices mis match (No API data retirmed)
+                        case 403:
+                            this.APIDeviceList = [];
+                            this.APIPolicyPKGList = [];
+                            this.FMGDeviceSelected = [];
+                            this.FMGPolicyPackageSelected = '';
+                            break;
+
+                        // Policy package or installation devices mis match (saved policy pkg/installation devices deleted or changed)
+                        case 404:
+                            this.FMGDeviceSelected = [];
+                            this.FMGPolicyPackageSelected = '';
+                            break;
+
+                        // Default reset everything
+                        default:
+                            this.adomDisabled = false;
+                            this.isScriptParentData = false;
+                            this.scriptNumber = '';
+                            this.scriptName = '';
+                            this.scriptDescr = '';
+                            this.progress_button_loader = false;
+                            this.step_button_loader = false;
+                            this.isCreateScriptWindowOpened = true;
+                            this.current_step = 0;
+                            this.adomSelected = '';
+                            this.FMGscriptIndexSelected = '';
+                            this.step_button_disabled = true;
+                            this.customizedScriptContentArray = [];
+                            this.originalScriptContent = '';
+                            this.template_target = '';
+                            this.draftScript = '';
+                            this.APIScriptList = [];
+                            this.APIDeviceList = [];
+                            this.APIPolicyPKGList = [];
+                            this.FMGDeviceSelected = [];
+                            this.FMGPolicyPackageSelected = '';
+                            break;
+                    }
+                },
+
+                /*
+                * GET FMGAPI ADOM list from JSONRPC - FMGADOMList() function and validate existing selected ADOM and ADOM list
+                */
+                validateADOM() {
+                    // Set loader
+                    this.step_button_loader = true;
+
+                    // Ajax call
+                    var ga = new GlideAjax('FMGJSONRPC');
+                    ga.addParam('sysparm_name', 'ADOMList');
+                    ga.setErrorCallback(JSONRPC_ErrorMessage.bind({ vm: this }));
+                    ga.getXMLAnswer(JSONRPC_ADOMList.bind({ vm: this }));
+                },
+
+                /*
+                * GET FMGAPI Script Lists from JSONRPC - FMGAPIScriptListInfo() function and validate existing selected script and script list for saved and unsumbmitted scripts
+                */
+                validateScript() {
+                    if (this.scriptNumber) {
+                        // Set loader
+                        this.step_button_loader = true;
+
+                        // Ajax call
+                        var ga = new GlideAjax('FMGJSONRPC');
+                        ga.addParam('sysparm_name', 'FMGAPIScriptListInfo');
+                        ga.addParam('sysparm_adom', this.adomSelected);
+
+                        ga.setErrorCallback(JSONRPC_ErrorMessage.bind({ vm: this }));
+                        ga.getXMLAnswer(JSONRPC_validateScript.bind({ vm: this }));
+                    }
+                },
+
+                /*
+                * GET FMGAPI policy package list or installation devices from JSONRPC - Then validate accordingly
+                */
+                validateInstallationTarget() {
+                    // Existing?
+                    if (this.adomSelected !== '' && this.scriptNumber) {
+                        // Init
+                        var ga = new GlideAjax('FMGJSONRPC');
+
+                        switch (this.template_target) {
+                            // Need policy package for ADOM database
+                            case 'adom_database':
+                                if (this.APIPolicyPKGList.length) {
+
+                                    ga.addParam('sysparm_name', 'FMGAPIPolicyPKGList');
+                                    ga.addParam('sysparm_adom', this.adomSelected);
+                                    ga.setErrorCallback(JSONRPC_ErrorMessage.bind({ vm: this }));
+                                    ga.getXMLAnswer(JSONRPC_validateFMGAPIPolicyPKGList.bind({ vm: this }));
+                                }
+
+                                break;
+
+                            // Need device list for device database
+                            default:
+
+                                if (this.APIDeviceList.length) {
+                                    ga.addParam('sysparm_name', 'FMGAPIDeviceList');
+                                    ga.addParam('sysparm_adom', this.adomSelected);
+                                    ga.setErrorCallback(JSONRPC_ErrorMessage.bind({ vm: this }));
+                                    ga.getXMLAnswer(JSONRPC_validateFMGAPIDeviceList.bind({ vm: this }));
+                                }
+                                break;
+                        }
+                    }
+                },
+
+                closeCreateScriptWindow: function () {
+                    this.$root.$data.currentView = '';
+                },
+
+                handleCreateScriptCloseBtn: function () {
+                    this.$root.handlePageNumChange(this.$root.$data.fmgScriptPageNum);
+                    this.closeCreateScriptWindow();
+                },
+
+                /*
+                * Build Script previous step stepper
+                */
+                previousStep() {
+                    this.step_button_loader = false;
+                    this.step_button_disabled = false;
+
+                    if (this.current_step == 0) {
+                        this.current_step = 0;
+                    } else {
+                        this.current_step -= 1;
+                    }
+                },
+                /*
+                * Build Script next step stepper
+                */
+                nextStep() {
+                    this.current_step++;
+
+                    if (this.current_step >= 4) {
+                        this.current_step = 4;
+                    }
+
+                    switch (this.current_step) {
+                        case 0:
+                            this.step_button_disabled = true;
+
+                            if (this.scriptName !== null && this.scriptName !== undefined && this.scriptName !== '') {
+                                this.step_button_disabled = false;
+                            }
+                            break;
+                        case 1:
+                            this.step_button_disabled = true;
+
+                            if (this.adomSelected !== null && this.adomSelected !== undefined && this.adomSelected !== '') {
+                                this.step_button_disabled = false;
+                            }
+
+                            // Check if selected ADOM still existed if not warn user
+                            this.validateADOM();
+                            break;
+                        case 2:
+                            this.step_button_disabled = true;
+
+                            // parseInt('') => NaN
+                            if (!isNaN(this.FMGscriptIndexSelected) && this.FMGscriptIndexSelected !== null && this.FMGscriptIndexSelected !== undefined && this.FMGscriptIndexSelected !== '') {
+                                this.step_button_disabled = false;
+                            }
+
+                            // Check if there are any changes in the selected script and the overall scripts
+                            this.validateScript();
+                            break;
+                        case 3:
+                            this.step_button_disabled = false;
+                            break;
+                        case 4:
+                            this.step_button_disabled = true;
+
+                            // Validate installation targets either policy packages or installation devices
+                            this.validateInstallationTarget();
+                            break;
+                        default:
+                            this.step_button_disabled = true;
+                            break;
+                    }
+                },
+
+                selectAllDevices: function () {
+                    this.$data.FMGDeviceSelected = [];
+
+                    for (var i = 0; i < this.$data.APIDeviceList.length; i++) {
+                        this.$data.FMGDeviceSelected.push(
+                            this.$data.APIDeviceList[i].name,
+                        );
+                    }
+                },
+            },
+            activated() {
+                // Values?
+                if (Object.keys(this.scriptParentRowData).length > 0 && this.scriptParentRowData.constructor === Object) {
+                    for (var key in this.scriptParentRowData) {
+                        this.isScriptParentData = true;
+
+                        if (key === 'number') {
+                            this.scriptNumber = this.scriptParentRowData['number'];
+                        }
+
+                        if (key === 'script_name') {
+                            this.scriptName = this.scriptParentRowData['script_name'];
+
+                            // Init step 1
+                            if (this.scriptName !== '') {
+                                this.step_button_disabled = false;
+                            }
+                            else {
+                                this.step_button_disabled = true;
+                            }
+                        }
+
+                        if (key === 'description') {
+                            this.scriptDescr = this.scriptParentRowData['description'];
+                        }
+
+                        if (key === 'adom') {
+                            this.adomSelected = this.scriptParentRowData['adom'];
+                        }
+
+                        if (key === 'script_content') {
+                            this.originalScriptContent = this.scriptParentRowData['script_content'];
+                        }
+
+                        if (key === 'script_content_configured') {
+                            this.draftScript = this.scriptParentRowData['script_content_configured'];
+                        }
+
+                        if (key === 'script_content_configured_progress') {
+                            this.customizedScriptContentArray = this.scriptParentRowData['script_content_configured_progress'];
+                        }
+
+                        if (key === 'script_type') {
+                            this.template_target = this.scriptParentRowData['script_type'];
+                        }
+
+                        if (key === 'policy_package') {
+                            this.FMGPolicyPackageSelected = this.scriptParentRowData['policy_package'];
+                        }
+
+                        if (key === 'script_index_selected') {
+                            this.FMGscriptIndexSelected = parseInt(this.scriptParentRowData['script_index_selected']);
+                        }
+
+                        if (key === 'script_list') {
+                            this.APIScriptList = this.scriptParentRowData['script_list'];
+                        }
+
+                        if (key === 'device_list') {
+                            this.APIDeviceList = this.scriptParentRowData['device_list'];
+                        }
+
+                        if (key === 'policy_package_list') {
+                            this.APIPolicyPKGList = this.scriptParentRowData['policy_package_list'];
+                        }
+
+                        if (key === 'installation_device') {
+                            this.FMGDeviceSelected = this.scriptParentRowData['installation_device'];
+                        }
+                    }
+                }
+            },
+            deactivated() {
+                // Reset data
+                this.resetScriptData(8080);
+            },
+            props: ['adomParentSysProp', 'scriptParentRowData'],
+        });
+
+        // Submitted script component
+        Vue.component('submitted-script', {
+            template: `
+<Modal
+    v-model="isSumbittedScriptWindowOpened"
+    fullscreen="true"
+    :closable="false"
+    :mask-closable="false"
+>
+    <div slot="header">
+        <Row>
+            <Col span="12">
+                <Button @click.prevent="handleSubmittedScriptCloseBtn">Close</Button>
+            </Col>
+            <Col span="12" style="text-align: right;">
+                <Button @click.prevent="showCancelFMGScriptModal = true">Cancel Change</Button>
+                <Modal
+                    v-model="showCancelFMGScriptModal"
+                    title="Confirmation"
+                    :mask-closable="false"
+                    @on-ok="handleCancelFMGScriptBtn">
+                    <p>Are you sure you would like to cancel the change?</p>
+                </Modal>
+            </Col>
+        </Row>
+    </div>
+
+    <Form :label-width="200">
+        <Row>
+            <Col span="12">
+                <h4>Change Details</h4>
+                <FormItem label="ID" style="margin-bottom: 0px;">
+                    {{ scriptNumber }}
+                </FormItem>
+                <FormItem label="Creation Time" style="margin-bottom: 0px;">
+                    {{ created }}
+                </FormItem>
+                <FormItem label="Type" style="margin-bottom: 0px;">
+                    {{ template_targetTxt }}
+                </FormItem>
+                <FormItem label="Description" style="margin-bottom: 0px;">
+                    <Input type="textarea" :value="scriptDescr" readonly="readonly" :autosize="{minRows: 2, maxRows: 3}"></Input>
+                </FormItem>
+                <FormItem label="ADOM" style="margin-bottom: 0px;">
+                    {{ adomSelected }}
+                </FormItem>
+                <FormItem v-if="template_target == 'adom_database' " label="Policy Package" style="margin-bottom: 0px;">
+                    {{ FMGPolicyPackageSelected }}
+                </FormItem>
+                <FormItem label="Device(s)" style="margin-bottom: 0px;">
+                    {{ FMGDeviceSelected }}
+                </FormItem>
+                <FormItem label="Script" style="margin-bottom: 0px;">
+                    {{ scriptName }}
+                </FormItem>
+                <FormItem label="Configuration Script" style="margin-bottom: 0px;">
+                    <Input type="textarea" :value="draftScript" readonly="readonly" :autosize="{minRows: 2, maxRows: 6}"></Input>
+                </FormItem>
+            </Col>
+            <Col span="11" offset="1">
+                <h4>Execution Details</h4>
+                <FormItem label="Execution Status" style="margin-bottom: 0px;">
+                    {{ execScriptStatus }}
+                    <Button @click.prevent="showRetryFMGScriptModal = true" :disabled="sch_exec_script_status !== 3">Retry</Button>
+                    <Modal
+                        v-model="showRetryFMGScriptModal"
+                        title="Confirmation"
+                        :mask-closable="false"
+                        @on-ok="handleRetryFMGScriptBtn">
+                        <p>Are you sure you would like to retry the change?</p>
+                    </Modal>
+                </FormItem>
+                <FormItem label="Task ID" style="margin-bottom: 0px;">
+                    {{ execScriptTaskID }}
+                </FormItem>
+                <FormItem label="Progress" style="margin-bottom: 0px;">
+                    {{ execScriptPercent }}%
+                </FormItem>
+                <FormItem label="Last Update" style="margin-bottom: 0px;">
+                    {{ updated }}
+                </FormItem>
+
+                <h4>Installation Details</h4>
+                <FormItem label="Installation Status" style="margin-bottom: 0px;">
+                    {{ deployStatus }}
+                </FormItem>
+                <FormItem label="Task ID" style="margin-bottom: 0px;">
+                    {{ deployTaskID }}
+                </FormItem>
+                <FormItem label="Progress" style="margin-bottom: 0px;">
+                    {{ deployPercent }}%
+                </FormItem>
+                <FormItem label="Last Update" style="margin-bottom: 0px;">
+                    {{ updated }}
+                </FormItem>
+            </Col>
+        </Row>
+        <Row>
+            <Col span="24">
+                <h4 style="margin: 20px 0px;">FortiManager Execution Log</h4>
+                <Table
+                    :columns="execScriptLogColArr"
+                    :data="execScriptSummary"
+                ></Table>
+            </Col>
+        </Row>
+        <Row>
+            <Col span="24">
+                <h4 style="margin: 20px 0px;">FortiManager Installation Log</h4>
+                <Table
+                    :columns="execScriptLogColArr"
+                    :data="deploySummary"
+                ></Table>
+            </Col>
+        </Row>
+    </Form>
+
+    <div slot="footer">
+    </div>
+</Modal>
+            `,
+            data: function () {
+                return {
+                    scriptNumber: '',
+                    scriptName: '',
+                    scriptDescr: '',
+                    isSumbittedScriptWindowOpened: true,
+                    adomSelected: '',
+                    template_target: '',
+                    template_targetTxt: '',
+                    FMGDeviceSelected: '',
+                    FMGPolicyPackageSelected: '',
+                    draftScript: '',
+                    execScriptTaskID: 0,
+                    execScriptPercent: 0,
+                    execScriptStatus: '',
+                    execScriptSummary: [],
+                    execScriptLogColArr: [
+                        {
+                            title: 'Name',
+                            key: 'name'
+                        },
+                        {
+                            title: 'Progress',
+                            key: 'percent',
+                            render: (h, params) => {
+                                if ('percent' in params.row) {
+                                    return h('span', params.row.percent + '%');
+                                } else {
+                                    return h('span', '');
+                                }
+                            },
+                        },
+                        {
+                            title: 'Detail',
+                            key: 'detail'
+                        }
+                    ],
+                    deployTaskID: 0,
+                    deployPercent: 0,
+                    deployStatus: '',
+                    deploySummary: [],
+                    sch_exec_script_status: '',
+                    created: '',
+                    updated: '',
+                    showCancelFMGScriptModal: false,
+                    showRetryFMGScriptModal: false,
+                };
+            },
+            methods: {
+                closeSubmittedScriptWindow: function () {
+                    //this.$Modal.remove();
+                    this.$root.$data.currentView = '';
+                },
+                handleSubmittedScriptCloseBtn: function () {
+                    this.$root.handlePageNumChange(this.$root.$data.fmgScriptPageNum);
+                    this.closeSubmittedScriptWindow();
+                },
+                handleCancelFMGScriptBtn: function () {
+                    var ga = new GlideAjax('FMGJSONRPC');
+                    ga.addParam('sysparm_name', 'CancelFMGScript');
+                    ga.addParam('sysparm_number', this.$data.scriptNumber);
+
+                    ga.setErrorCallback(JSONRPC_Error.bind({ vm: this }));
+                    ga.getXMLAnswer(JSONRPC_CancelFMGScript.bind({ vm: this }));
+                },
+                handleRetryFMGScriptBtn: function () {
+                    var ga = new GlideAjax('FMGJSONRPC');
+                    ga.addParam('sysparm_name', 'RetryFMGScript');
+                    ga.addParam('sysparm_number', this.$data.scriptNumber);
+
+                    ga.setErrorCallback(JSONRPC_Error.bind({ vm: this }));
+                    ga.getXMLAnswer(JSONRPC_RetryFMGScript.bind({ vm: this }));
+                },
+            },
+            activated() {
+                // Values?
+                if (Object.keys(this.submittedScriptParentRowData).length > 0 && this.submittedScriptParentRowData.constructor === Object) {
+                    for (var key in this.submittedScriptParentRowData) {
+                        switch (key) {
+                            case 'number':
+                                this.scriptNumber = this.submittedScriptParentRowData['number'];
+                                break;
+                            case 'script_name':
+                                this.scriptName = this.submittedScriptParentRowData['script_name'];
+                                break;
+                            case 'description':
+                                this.scriptDescr = this.submittedScriptParentRowData['description'];
+                                break;
+                            case 'adom':
+                                this.adomSelected = this.submittedScriptParentRowData['adom'];
+                                break;
+                            case 'script_content_configured':
+                                this.draftScript = this.submittedScriptParentRowData['script_content_configured'];
+                                break;
+                            case 'script_type':
+                                this.template_target = this.submittedScriptParentRowData['script_type'];
+                                break;
+                            case 'script_typeTxt':
+                                this.template_targetTxt = this.submittedScriptParentRowData['script_typeTxt'];
+                                break;
+                            case 'policy_package':
+                                this.FMGPolicyPackageSelected = this.submittedScriptParentRowData['policy_package'];
+                                break;
+                            case 'installation_device':
+                                this.FMGDeviceSelected = this.submittedScriptParentRowData['installation_device'] && Array.isArray(this.submittedScriptParentRowData['installation_device']) ? this.submittedScriptParentRowData['installation_device'].join(', ') : '';
+                                break;
+                            case 'exec_script_task_id':
+                                this.execScriptTaskID = this.submittedScriptParentRowData['exec_script_task_id'];
+                                break;
+                            case 'exec_script_percent':
+                                this.execScriptPercent = this.submittedScriptParentRowData['exec_script_percent'];
+                                break;
+                            case 'exec_script_status':
+                                this.execScriptStatus = this.submittedScriptParentRowData['exec_script_status'];
+                                break;
+                            case 'exec_script_summary':
+                                this.execScriptSummary = this.submittedScriptParentRowData['exec_script_summary'] ? JSON.parse(this.submittedScriptParentRowData['exec_script_summary']) : [];
+                                break;
+                            case 'deploy_task_id':
+                                this.deployTaskID = this.submittedScriptParentRowData['deploy_task_id'];
+                                break;
+                            case 'deploy_percent':
+                                this.deployPercent = this.submittedScriptParentRowData['deploy_percent'];
+                                break;
+                            case 'deploy_status':
+                                this.deployStatus = this.submittedScriptParentRowData['deploy_status'];
+                                break;
+                            case 'deploy_summary':
+                                this.deploySummary = this.submittedScriptParentRowData['deploy_summary'] ? JSON.parse(this.submittedScriptParentRowData['deploy_summary']) : [];
+                                break;
+                            case 'sch_exec_script_status':
+                                this.sch_exec_script_status = this.submittedScriptParentRowData['sch_exec_script_status'];
+                                break;
+                            case 'created':
+                                this.created = this.submittedScriptParentRowData['created'];
+                                break;
+                            case 'updated':
+                                this.updated = this.submittedScriptParentRowData['updated'];
+                                break;
+                            default:
+                        }
+                    }
+                }
+            },
+            deactivated() {
+            },
+            props: ['submittedScriptParentRowData'],
+        });
+
+        // Main Vue Instance
+        let Main = {
+            render: function (createElement) {
+                if (!this.html) {
+                    return createElement('div', 'Loading ...');
+                } else {
+                    return this.html();
+                }
+            },
+            mounted: function () {
+                // NOTE: When there is only one single-line text input field in a form,
+                // the user agent should accept Enter in that field as a request to submit the form.
+                // To prevent this behavior, you can add @submit.native.prevent on <Form>
+                let html = `
+<Layout>
+    <Header>
+        <div class="headerDiv">
+            <Icon type="md-bug" size="20"></Icon>
+            <span class="headerTitle">FortiManager Changes</span>
+        </div>
+    </Header>
+    <Content>
+        <div id="app-fmg-content">
+            <Alert ref="fmgScriptAlert"
+                :type="item.type"
+                show-icon
+                closable
+                v-for="item in alert"
+            >
+                <span slot="desc">{{ item.msg }}</span>
+            </Alert>
+
+            <Dropdown trigger="click" @on-click="handleMenuClick">
+                <a href="javascript:void(0)">
+                    <Icon type="md-menu" size="30" color="black" title="Menu"></Icon>
+                </a>
+                <DropdownMenu slot="list">
+                    <DropdownItem name="refreshList">Refresh List</DropdownItem>
+                    <DropdownItem v-if="script_write_role" name="createScript">New Change</DropdownItem>
+                </DropdownMenu>
+            </Dropdown>
+
+            <span>ADOM: </span>
+            <Select
+                v-model="AdomFilterSelected"
+                id="app-fmg-cripts-filter-Select"
+                @on-change="handleFitlerSelect">
+                <Option v-for="option in adomList" :value="option" :key="option" >
+                    {{ option }}
+                </Option>
+            </Select>
+
+            <Table
+                :columns="fmgScriptColArr"
+                :data="fmgScriptArr"
+                @on-row-click="handleRowClick"
+            >
+            </Table>
+
+            <Page
+                :page-size="fmgScriptRowPerPage"
+                :total="fmgScriptRowCount"
+                show-total
+                @on-change="handlePageNumChange"
+            ></Page>
+
+            <keep-alive>
+                <component
+                    :is="currentView"
+                    :adomParentSysProp="adomSysProp"
+                    :scriptParentRowData="scriptRowData"
+                    @scriptCreated="handleScriptCreatedEvent"
+                    :submittedScriptParentRowData="scriptRowData"
+                ></component>
+            </keep-alive>
+
+        </div>
+    </Content>
+    <Footer>
+        <div>
+        </div>
+    </Footer>
+</Layout>`;
+
+                this.html = Vue.compile(html).render;
+            },
+            data: function () {
+                // Init data
+                return {
+                    script_write_role: 0,
+                    currentView: '',
+                    html: null,
+                    alert: [],
+                    fmgScriptColArr: [
+                        {
+                            title: 'ID',
+                            key: 'number',
+                            width: 160,
+                            className: 'app-fmg-script-grid-column',
+                        },
+                        {
+                            title: 'ADOM',
+                            key: 'adom',
+                            width: 150,
+                            className: 'app-fmg-script-grid-column',
+                        },
+                        {
+                            title: 'Creation Time',
+                            key: 'created',
+                            width: 150,
+                            className: 'app-fmg-script-grid-column',
+                        },
+                        {
+                            title: 'Type',
+                            key: 'script_typeTxt',
+                            width: 150,
+                            className: 'app-fmg-script-grid-column',
+                        },
+                        {
+                            title: 'Description',
+                            key: 'description',
+                            minWidth: 200,
+                            className: 'app-fmg-script-grid-column'
+                        },
+                        {
+                            title: 'Status',
+                            key: 'overall_status',
+                            width: 180,
+                            className: 'app-fmg-script-grid-column',
+                        },
+                        {
+                            title: 'Last Update',
+                            key: 'updated',
+                            width: 150,
+                            className: 'app-fmg-script-grid-column',
+                        },
+                    ],
+                    AdomFilterSelected: 'All',
+                    fmgScriptArr: [],
+                    adomList: [],
+                    fmgScriptRowCount: 0,
+                    fmgScriptRowPerPage: 0,
+                    fmgScriptPageNum: 1,
+                    fmgScriptCache: {},
+                    adomSysProp: [],
+                    scriptRowData: {}
+                };
+            },
+            methods: {
+                handleFitlerSelect: function () {
+                    // Reload page
+                    this.handlePageNumChange(1);
+                },
+                handleScriptCreatedEvent: function () {
+                    // Reload page
+                    this.handlePageNumChange(1);
+                },
+                handleMenuClick: function (itemName) {
+                    if (itemName === 'refreshList') {
+                        this.handlePageNumChange(1);
+                    }
+
+                    if (itemName === 'createScript') {
+                        this.scriptRowData = {};
+                        this.currentView = 'create-script';
+                    }
+                },
+                handleRowClick: function (rowData) {
+                    if (rowData.is_submitted == 1) {
+                        this.scriptRowData = rowData;
+                        this.currentView = 'submitted-script';
+                    } else {
+                        if (this.script_write_role) {
+                            this.scriptRowData = rowData;
+                            this.currentView = 'create-script';
+                        } else {
+                            this.$Message.info({
+                                content: 'No permission to review draft scripts',
+                                duration: 30,
+                                closable: true,
+                            });
+                        }
+                    }
+                },
+                handlePageNumChange: function (pageNum) {
+                    this.$data.fmgScriptPageNum = pageNum;
+                    var ga = new GlideAjax('FMGJSONRPC');
+                    ga.addParam('sysparm_name', 'FMGScriptList');
+                    ga.addParam('sysparm_pageNum', (pageNum - 1));
+                    // Add filter parameter if there are any
+                    ga.addParam('sysparm_adomfilter', this.$data.AdomFilterSelected);
+                    ga.setErrorCallback(JSONRPC_Error.bind({ vm: this }));
+                    ga.getXMLAnswer(JSONRPC_RefreshFMGScriptList.bind({ vm: this }));
+                },
+            },
+        };
+        let MainComponent = Vue.extend(Main);
+        let vm = new MainComponent();
+        vm.$mount('#app');
+        vm.handlePageNumChange(1);
+    }
+
+    /*
+    * Normal
+    */
+    function Is_Variable_Existing(addedArr, item) {
+        for (var i = 0; i < addedArr.length; i++) {
+            if (addedArr[i].fieldname == item.fieldname) {
+                return true;
+            }
+        };
+        return false;
+    }
+
+    /*
+    * Scroll to top
+    */
+    function FMGScript_ScrollToTop() {
+        $jq('html, body').animate({ scrollTop: 0 }, 400);
+    }
+
+    /*
+    * GlideAjax callback - error
+    */
+    function JSONRPC_Error(responseData) {
+        this.vm.$data.alert.push({
+            type: 'error',
+            msg: 'Network Connection-Error occurred while attempting to process data from server. responseData.statusText: ' + responseData.statusText,
+        });
+        FMGScript_ScrollToTop();
+    }
+
+    function JSONRPC_ErrorMessage(responseData) {
+        // Remove loader
+        if ('step_button_loader' in this.vm.$data) {
+            this.vm.$data.step_button_loader = false;
+        }
+
+        if ('progress_button_loader' in this.vm.$data) {
+            this.vm.$data.progress_button_loader = false;
+        }
+
+        this.vm.$Message.error({
+            content: responseData.statusText,
+            duration: 30,
+            closable: true,
+        });
+    }
+
+    function JSONRPC_InfoMessage(responseData) {
+        this.vm.$Message.info({
+            content: responseData.statusText,
+            duration: 10,
+            closable: true,
+        });
+    }
+
+    function JSONRPC_SuccessMessage(responseData) {
+        this.vm.$Message.success({
+            content: responseData.statusText,
+            duration: 10,
+            closable: true,
+        });
+    }
+
+    /**
+     * GlideAjax callback - Cancel FMG Script
+     */
+    function JSONRPC_CancelFMGScript(responseData) {
+        if (!responseData) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        var responseObj = JSON.parse(responseData);
+
+        if (
+            !('result' in responseObj)
+            || !('0' in responseObj.result)
+            || !('status' in responseObj.result[0])
+            || !('code' in responseObj.result[0].status)
+            || responseObj.result[0].status.code !== 0
+        ) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: 'Something went wrong. Please try again.' });
+            return;
+        }
+
+        JSONRPC_SuccessMessage.bind({ vm: this.vm })({ statusText: 'The cancel request has been received.' });
+    }
+
+    /**
+     * GlideAjax callback - Retry FMG Script
+     */
+    function JSONRPC_RetryFMGScript(responseData) {
+        if (!responseData) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        var responseObj = JSON.parse(responseData);
+
+        if (
+            !('result' in responseObj)
+            || !('0' in responseObj.result)
+            || !('status' in responseObj.result[0])
+            || !('code' in responseObj.result[0].status)
+            || responseObj.result[0].status.code !== 0
+        ) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: 'Something went wrong. Please try again.' });
+            return;
+        }
+
+        JSONRPC_SuccessMessage.bind({ vm: this.vm })({ statusText: 'The retry request has been received.' });
+    }
+
+    /*
+    * GlideAjax callback - Refresh FMG Script List
+    */
+    function JSONRPC_RefreshFMGScriptList(responseData) {
+        if (!responseData) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        // TODO: we still need to check whether JSON.parse OK (or throw exception)
+        var responseObj = JSON.parse(responseData);
+
+        if (!('result' in responseObj)) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: 'No result' });
+            return;
+        }
+
+        if (responseObj.result[0].status.code !== 0) {
+            JSONRPC_Error.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+            return;
+        }
+
+        this.vm.$data.fmgScriptArr = responseObj.result[0].data.fmgScriptArr;
+        this.vm.$data.adomList = responseObj.result[0].data.adomList;
+        this.vm.$data.fmgScriptRowCount = responseObj.result[0].data.fmgScriptRowCount;
+        this.vm.$data.fmgScriptRowPerPage = responseObj.result[0].data.fmgScriptRowPerPage;
+        this.vm.$data.adomSysProp = responseObj.result[0].data.adomSysProp;
+        this.vm.$data.script_write_role = responseObj.result[0].data.script_write_role;
+    }
+
+    function JSONRPC_ADOMList(responseData) {
+
+        // Remove loader
+        this.vm.$data.step_button_loader = false;
+
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Retrieve FortiManager ADOM list error' });
+
+            // Clear all data (use default case)
+            this.vm.$data.adomDisabled = true;
+            this.vm.resetScriptData(400);
+            return;
+        }
+
+        if (responseData === '') {
+            return;
+        }
+
+        var responseObject = JSON.parse(responseData);
+        if (Array.isArray(responseObject) !== true) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Retrieve FortiManager ADOM list error' });
+
+            // Clear all data (use default case)
+            this.vm.$data.adomDisabled = true;
+            this.vm.resetScriptData(400);
+            return;
+        }
+
+        if (this.vm.$data.adomSelected != '') {
+            var foundSelectedADOM = false;
+
+            for (var i = 0; i < responseObject.length; i++) {
+                if (this.vm.$data.adomSelected === responseObject[i]) {
+                    foundSelectedADOM = true;
+                }
+            }
+
+            if (foundSelectedADOM === false) {
+                // Notify user
+                JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Selected ADOM ' + this.vm.$data.adomSelected + ' no longer valid. Please select a new ADOM.' });
+                // Reset data
+                this.vm.resetScriptData(400);
+                return;
+            }
+        }
+
+        this.vm.adomParentSysProp = responseObject;
+    }
+
+    /*
+    * GlideAjax callback - validateADOM
+    */
+    function JSONRPC_validateADOM(responseData) {
+        // Remove loader
+        this.vm.$data.step_button_loader = false;
+
+        // No?
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Retrieve FortiManager ADOM list error' });
+
+            // Clear all data (use default case)
+            this.vm.$data.adomDisabled = true;
+            this.vm.resetScriptData(400);
+            return;
+        }
+
+        // Loop through parsed response object
+        var parsed_response_object = JSON.parse(responseData);
+
+        //
+        if (
+            !('data' in parsed_response_object.result[0])
+            || !('APIADOMList' in parsed_response_object.result[0].data)
+            || parsed_response_object.result[0].data.APIADOMList.length === 0
+        ) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Unable to find any ADOM list from FMG' });
+
+            // Clear all data (use default case)
+            this.vm.$data.adomDisabled = true;
+            this.vm.resetScriptData(400);
+            return;
+        }
+
+        // Prepare to sync local ADOMs with latest ones on FortiManager
+        var fmg_updated_adom = [];
+
+        // Loop through object to check
+        for (var i = 0; i < parsed_response_object.result[0].data.APIADOMList.length; i++) {
+            var item = parsed_response_object.result[0].data.APIADOMList[i];
+
+            if (item.hasOwnProperty('name')) {
+
+                fmg_updated_adom.push(item.name);
+            }
+        }
+
+        //JSONRPC_SuccessMessage.bind({ vm: this.vm })({ statusText: 'ADOM list has been synchoronized with the latest ADOMs on FortiManager' });
+
+        // Necessary?
+        // O(n^2) operation *** JUN *** you know Im looking for optimization when you read this.
+        // Check if any item in the selected ADOM list has been deleted from the current most updated ADOM list
+        if (this.vm.adomParentSysProp.length) {
+            for (var i = 0; i < this.vm.adomParentSysProp.length; i++) {
+                var existed = false;
+
+                for (var j = 0; j < parsed_response_object.result[0].data.APIADOMList.length; j++) {
+                    if (this.vm.adomParentSysProp[i] == parsed_response_object.result[0].data.APIADOMList[j].name) {
+                        existed = true;
+                        break;
+                    }
+                }
+
+                // No longer exists? clear all data and report an error
+                if (!existed) {
+                    // Notify user
+                    JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'ADOM ' + this.vm.adomParentSysProp[i] + ' has been removed from the list as it no longer exists on FortiManager.' });
+
+                    if (this.vm.$data.adomSelected) {
+                        // Selected ADOM is the one that no longer exists?
+                        if (this.vm.$data.adomSelected == this.vm.adomParentSysProp[i]) {
+                            // Notify user
+                            JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Selected ADOM ' + this.vm.$data.adomSelected + ' no longer exists on FortiManager. Please select a new ADOM.' });
+                            // Reset data
+                            this.vm.resetScriptData(400);
+                        }
+                    }
+                }
+            }
+        }
+
+        this.vm.adomParentSysProp = fmg_updated_adom;
+    }
+
+    /*
+    * GlideAjax callback - Validate FMG Installation Devices
+    */
+    function JSONRPC_validateFMGAPIDeviceList(responseData) {
+        // Remove loader
+
+        //
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined status returned. Unable to validate device list' });
+            this.vm.resetScriptData(403);
+            return;
+        }
+
+        // TODO: we still need to check whether JSON.parse OK (or throw exception)
+        var responseObj = JSON.parse(responseData);
+
+        if (!('result' in responseObj)) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No result returned. Unable to validate device list' });
+            this.vm.resetScriptData(403);
+            return;
+        }
+
+        if (responseObj.result[0].status.code !== 0) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+            this.vm.resetScriptData(403);
+            return;
+        }
+
+        var updated_device_list = responseObj.result[0].data.APIDeviceList;
+
+        if (!updated_device_list.length) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No device list returned. Unable to validate installation devices' });
+
+            // Clear data && return
+            this.vm.resetScriptData(403);
+            return;
+        }
+
+        //JSONRPC_SuccessMessage.bind({ vm: this.vm })({ statusText: 'FMG device list has been synchoronized with the latest ones on FortiManager' });
+
+        // Assign existing API device list to a temp var
+        var existing_device_list = this.vm.$data.APIDeviceList;
+
+        // Update APIPolicyPKGList to the most updated one
+        this.vm.$data.APIDeviceList = updated_device_list;
+
+        // Necessary?
+        // For every item in the saved installation device list , check such installation device still exists, if not warn user
+        // O(n^2) operation
+        if (existing_device_list.length) {
+            for (var i = 0; i < existing_device_list; i++) {
+                var existed = false;
+
+                for (var j = 0; j < updated_device_list; j++) {
+                    if (existing_device_list[i].name === updated_device_list[j].name) {
+                        existed = true;
+                        break;
+                    }
+                }
+
+                // No longer exists?
+                if (!existed) {
+
+                    // Notify user this error no longer exists
+                    JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Existing FortiManager device ' + existing_device_list[i].name + ' has been removed from the list as it no longer exists on FortiManager.' });
+                    // break;
+
+                    // Is it the one we already selected?
+                    if (this.vm.$data.FMGDeviceSelected && this.vm.$data.FMGDeviceSelected.length) {
+
+                        var index = this.vm.$data.FMGDeviceSelected.indexOf(existing_device_list[i]);
+                        // In the saved selected device list?
+                        if (index > -1) {
+                            JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Existing selected FortiManager device ' + existing_device_list[i].name + ' has been removed from the selected list as it no longer exists on FortiManager.' });
+                            // Lets remove it
+                            this.vm.$data.FMGDeviceSelected.splice(index, 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /*
+    * GlideAjax callback - Validate FMG API Policy PKG
+    */
+    function JSONRPC_validateFMGAPIPolicyPKGList(responseData) {
+        // Remove loader
+
+        //
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined status returned. Unable to validate policy package' });
+            // Clear data
+            this.vm.resetScriptData(403);
+            return;
+        }
+
+        // TODO: we still need to check whether JSON.parse OK (or throw exception)
+        var responseObj = JSON.parse(responseData);
+
+        if (!('result' in responseObj)) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No result returned. Unable to validate policy package' });
+
+            // Clear data
+            this.vm.resetScriptData(403);
+            return;
+        }
+
+        if (responseObj.result[0].status.code !== 0) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+
+            // clear data
+            this.vm.resetScriptData(403);
+            return;
+        }
+
+        var updated_policy_list = responseObj.result[0].data.APIPolicyPKGList;
+
+        if (!updated_policy_list.length) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No policy package returned. Unable to valide policy package' });
+
+            // Clear data && return
+            this.vm.resetScriptData(403);
+            return;
+        }
+
+        //JSONRPC_SuccessMessage.bind({ vm: this.vm })({ statusText: 'FMG policy package list has been synchoronized with the latest ones on FortiManager' });
+
+        // Assign existing API policy package list to a temp var
+        var existing_policy_list = this.vm.$data.APIPolicyPKGList;
+
+        // Update APIPolicyPKGList to the most updated one
+        this.vm.$data.APIPolicyPKGList = updated_policy_list;
+
+        // Necessary?
+        // For every item in the saved policy package list , check whether the policy package still exists, if not warn user
+        // O(n^2) operation  *** JUN *** you know Im looking for optimization when you read this.
+        if (existing_policy_list.length) {
+            for (var i = 0; i < existing_policy_list; i++) {
+                var existed = false;
+
+                for (var j = 0; j < updated_policy_list; j++) {
+                    if (existing_policy_list[i].name === updated_policy_list[j].name) {
+                        existed = true;
+                        break;
+                    }
+                }
+
+                // No longer exists?
+                if (!existed) {
+                    // Notify user this error no longer exists
+                    JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Existing policy package ' + existing_policy_list[i].name + ' has been removed from the list as it no longer exists on FortiManager.' });
+                    // break;
+
+                    // Did the user pre selected this one?
+                    if (this.vm.$data.FMGPolicyPackageSelected) {
+
+                        if (this.vm.$data.FMGPolicyPackageSelected === existing_policy_list[i].name) {
+                            // Show message
+                            JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Selected policy package ' + this.vm.$data.FMGPolicyPackageSelected + ' has been removed as it no longer exists on FortiManager. Please select a new policy package.' });
+                            // Reset data (Reset selected policy package, but keep policy package list && device list)
+                            this.vm.resetScriptData(404);
+                        }
+
+                    }
+                }
+            }
+        }
+    }
+
+    /*
+    * GlideAjax callback - validateScript
+    */
+    function JSONRPC_validateScript(responseData) {
+        // Remove loader
+        this.vm.$data.step_button_loader = false;
+
+        //
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined status returned. Unable to validate script' });
+
+            // Clear data && return
+            this.vm.resetScriptData(401);
+            return;
+        }
+
+        // TODO: we still need to check whether JSON.parse OK (or throw exception)
+        var responseObj = JSON.parse(responseData);
+
+        if (!('result' in responseObj)) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No result returned. Unable to validate script' });
+
+            // Clear data && return
+            this.vm.resetScriptData(401);
+            return;
+        }
+
+        if (responseObj.result[0].status.code !== 0) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+
+            // Clear data && return
+            this.vm.resetScriptData(401);
+            return;
+        }
+
+        var updated_script_list = responseObj.result[0].data.APIScriptList;
+
+        if (!updated_script_list.length) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No script returned. Unable to valide script' });
+
+            // Clear data && return
+            this.vm.resetScriptData(401);
+            return;
+        }
+
+        //JSONRPC_SuccessMessage.bind({ vm: this.vm })({ statusText: 'FMG script list has been synchoronized with the latest FortiGate scripts on FortiManager' });
+
+        // Assign existing API script list to a temp var
+        var existing_script_list = this.vm.$data.APIScriptList;
+
+        // Update APIScriptList to the most updated one
+        this.vm.$data.APIScriptList = updated_script_list;
+
+        // Necessary?
+        // For every item in the saved script list, check whether the script still exists, if not warn user
+        // O(n^2) operation  *** JUN *** you know Im looking for optimization when you read this.
+        if (existing_script_list.length) {
+
+            for (var i = 0; i < existing_script_list; i++) {
+                var existed = false;
+
+                for (var j = 0; j < updated_script_list; j++) {
+                    if (existing_script_list[i].name === updated_script_list[j].name) {
+                        existed = true;
+                        break;
+                    }
+                }
+
+                // No longer exists? clear all data and report an error
+                if (!existed) {
+                    // Notify user this error no longer exists
+                    JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Existing script ' + existing_script_list[i].name + ' has been removed from the list as it no longer exists on FortiManager.' });
+                    // break;
+                }
+            }
+        }
+
+        // FMG script already selected, does it still exists?
+        if (this.vm.$data.FMGscriptIndexSelected || this.vm.$data.FMGscriptIndexSelected === 0) {
+            var already_selected_script_obj = existing_script_list[this.vm.$data.FMGscriptIndexSelected];
+
+            // Init
+            var selected_script_exsits = false;
+            var updated_script_content = '';
+
+            for (var i = 0; i < updated_script_list.length; i++) {
+                if (updated_script_list[i].name === already_selected_script_obj.name) {
+                    // Set flag
+                    selected_script_exsits = true;
+
+                    // Record updated script content to examine changes later on
+                    updated_script_content = updated_script_list[i].content;
+
+                    // Record index right now (key step)
+                    this.vm.$data.FMGscriptIndexSelected = i;
+
+                    break;
+                }
+            }
+
+            // Object no longer exists?
+            if (!selected_script_exsits) {
+                // Reset data (Reset script index but keep scriptlist since it is updated to the latest on line 1772)
+                this.vm.resetScriptData(402);
+
+                // Show message
+                JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Selected script ' + already_selected_script_obj.name + ' has been removed as it no longer exists on FortiManager. Please select a new script.' });
+                return;
+            }
+
+            // Did the selected script content changed as well?
+            if (updated_script_content != already_selected_script_obj.content) {
+                // Reset script data
+                // Reset data (Reset script index but keep scriptlist since it is updated to the latest on line 1772)
+                this.vm.resetScriptData(402);
+
+                // Show message
+                JSONRPC_InfoMessage.bind({ vm: this.vm })({ statusText: 'Selected script ' + already_selected_script_obj.name + ' content has been updated on FortiManager. Please select a new script.' });
+                return;
+            }
+        }
+    }
+
+    /*
+    * GlideAjax callback - FMGCreateCustomizedScript
+    */
+    function JSONRPC_FMGCreateCustomizedScript(responseData) {
+        //
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        // TODO: we still need to check whether JSON.parse OK (or throw exception)
+        var responseObj = JSON.parse(responseData);
+
+        if (!('result' in responseObj)) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No result' });
+            return;
+        }
+
+        if (responseObj.result[0].status.code !== 0) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+            return;
+        }
+
+        var responseObj_result = responseObj.result[0].data.result;
+
+        // Fail
+        if (responseObj_result.result[0].status.code !== 0) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Creating Script failed at -> ' + responseObj_result.result[0].status.message });
+            return;
+        }
+
+        //
+        this.vm.$data.progress_button_loader = false;
+
+        //
+        var number = '';
+
+        if ('result' in responseObj_result
+            && '0' in responseObj_result.result
+            && 'data' in responseObj_result.result[0]
+            && 'bodyObj' in responseObj_result.result[0].data
+            && 'display_value' in responseObj_result.result[0].data.bodyObj
+        ) {
+            number = responseObj_result.result[0].data.bodyObj.display_value;
+        }
+
+        // Success
+        JSONRPC_SuccessMessage.bind({ vm: this.vm })({ statusText: 'FortiManager Change ' + number + ' has been saved' });
+
+        // Emit script created event
+        this.vm.$emit('scriptCreated');
+
+        // Close current create script modal
+        this.vm.$root.$data.currentView = '';
+
+        return;
+    }
+
+    /*
+    * GlideAjax callback - Get FMG API device list
+    */
+    function JSONRPC_FMGAPIDeviceList(responseData) {
+        //
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        // TODO: we still need to check whether JSON.parse OK (or throw exception)
+        var responseObj = JSON.parse(responseData);
+
+        if (!('result' in responseObj)) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No result' });
+            return;
+        }
+
+        if (responseObj.result[0].status.code !== 0) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+            return;
+        }
+
+        this.vm.$data.APIDeviceList = responseObj.result[0].data.APIDeviceList;
+    }
+
+    /*
+    * GlideAjax callback - Fetch FMG API Script
+    */
+    function JSONRPC_FMGAPIScriptListInfo(responseData) {
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        try {
+            var responseObj = JSON.parse(responseData);
+            if (!('result' in responseObj)) {
+                JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No result' });
+                return;
+            }
+
+            if (responseObj.result[0].status.code !== 0) {
+                JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+                return;
+            }
+
+            this.vm.$data.APIScriptList = responseObj.result[0].data.APIScriptList;
+            // Change the status of btn
+            this.vm.$data.step_button_loader = false;
+            this.vm.$data.step_button_disabled = false;
+        } catch (e) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Excpetion' });
+            return;
+        }
+    }
+
+    /*
+    * GlideAjax callback - Fetch FMG API Policy PKG
+    */
+    function JSONRPC_FMGAPIPolicyPKGList(responseData) {
+        //
+        if (!responseData) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'Network Connection-Undefined' });
+            return;
+        }
+
+        // TODO: we still need to check whether JSON.parse OK (or throw exception)
+        var responseObj = JSON.parse(responseData);
+
+        if (!('result' in responseObj)) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: 'No result' });
+            return;
+        }
+
+        if (responseObj.result[0].status.code !== 0) {
+            JSONRPC_ErrorMessage.bind({ vm: this.vm })({ statusText: responseObj.result[0].status.message });
+            return;
+        }
+
+        this.vm.$data.APIPolicyPKGList = responseObj.result[0].data.APIPolicyPKGList;
+    }
+})(jQuery, GlideAjax, Vue, iview, UtilCli);
+]]></script>
+        <script_name>app_fmg_script</script_name>
+        <sys_class_name>sys_ui_script</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-12-03 19:38:54</sys_created_on>
+        <sys_id>3e1deedfdb022f00310473e1ba96191b</sys_id>
+        <sys_mod_count>811</sys_mod_count>
+        <sys_name>x_forti_fmgintgv2.app_fmg_script</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_ui_script_3e1deedfdb022f00310473e1ba96191b</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-04-16 18:18:40</sys_updated_on>
+        <ui_type>0</ui_type>
+        <use_scoped_format>false</use_scoped_format>
+    </sys_ui_script>
+</record_update>

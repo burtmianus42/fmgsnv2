@@ -1,0 +1,817 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>package_private</access>
+        <active>true</active>
+        <api_name>x_forti_fmgintgv2.FMGApi</api_name>
+        <caller_access/>
+        <client_callable>false</client_callable>
+        <description/>
+        <name>FMGApi</name>
+        <script><![CDATA[/* global Class */
+/**
+ * FMGApi provides the API to the remote FortiManager.
+ */
+/*
+// device_database
+config global
+config system global
+set admintimeout ${ADMIN_TIMEOUT}
+end
+
+// device_database - provide by Ali
+config system global
+set admin admin-console-timeout ${value}
+end
+
+// adom_database
+config firewall policy
+edit 100
+set srcaddr all
+set dstaddr all
+set srcintf any
+set dstintf any
+set schedule always
+set service ${SERVICE}
+set action accept
+end
+
+// remote_device
+config user quarantine
+config targets
+edit "Service-Now"
+config macs
+edit ${mac}
+set description "${description}"
+next
+end
+next
+end
+end
+*/
+var FMGApi = Class.create();
+FMGApi.prototype = {
+    get METHOD_GET() {
+        return 'get';
+    },
+    get METHOD_ADD() {
+        return 'add';
+    },
+    get METHOD_SET() {
+        return 'set';
+    },
+    get METHOD_UPDATE() {
+        return 'update';
+    },
+    get METHOD_EXEC() {
+        return 'exec';
+    },
+    get METHOD_DELETE() {
+        return 'delete';
+    },
+    initialize: function (optData) {
+        // Get application scope name
+        this.currScopeName = gs.getCurrentScopeName();
+        // Required variables
+        this.url = '';
+        this.username = '';
+        this.password = '';
+
+        // Get crendentials
+        this.RefreshFMGCredential();
+
+        // Reusable variables
+        this.utilSrv = new UtilSrv();
+        this.node = new Node();
+        this.restApi = new RESTApi();
+
+        // set session expire time (not sure if it is 600 seconds, if it expired, 500 error received)
+        this.sessionExpireSecond = 600;
+    },
+
+    /*
+    * Check if current FortiManager session time has expired
+    * @return boolean
+    */
+    IsFMGSessionExpired: function () {
+        var timeDiff = this.utilSrv.GetUnixTimestamp() - this.GetFMGSessionTime();
+
+        if (timeDiff > this.sessionExpireSecond) {
+            return true;
+        }
+
+        return false;
+    },
+
+    /*
+    * Check if current FortiManager session is valid
+    * @return boolean
+    */
+    IsFMGSessionValid: function () {
+        if (!(this.GetFMGSession())) {
+            return false;
+        }
+
+        return !(this.IsFMGSessionExpired());
+    },
+
+    /*
+    * Get FortiManager login credentials
+    * @return object
+    */
+    GetFMGCredential: function () {
+        return {
+            domain: gs.getProperty(this.currScopeName + '.fmg.domain'),
+            port: Number(gs.getProperty(this.currScopeName + '.fmg.port')),
+            username: gs.getProperty(this.currScopeName + '.fmg.username'),
+            password: gs.getProperty(this.currScopeName + '.fmg.password'),
+        };
+    },
+
+    /*
+    * Get FortiManager session
+    * @return string
+    */
+    GetFMGSession: function () {
+        return gs.getProperty(this.currScopeName + '.fmg.session');
+    },
+
+    /*
+    * Get FortiManager session time
+    */
+    GetFMGSessionTime: function () {
+        var sessionTime = gs.getProperty(this.currScopeName + '.fmg.sessiontime');
+
+        if (this.utilSrv.IsNumeric(sessionTime) !== true) {
+            return 0;
+        }
+
+        return parseInt(sessionTime);
+    },
+
+    /*
+    * Get FMG system status
+    */
+    GetFMGSystemStatus: function () {
+        var params = [{
+            'apiver': 3,
+            'url': '/sys/status',
+        }];
+
+        return this.SendRequest(this.METHOD_GET, params);
+    },
+
+    /*
+    * Reset FortiManager login credentials
+    */
+    RefreshFMGCredential: function () {
+        var fmgCredential = this.GetFMGCredential();
+        this.url = 'https://' + fmgCredential.domain + (fmgCredential.port === 443 ? '' : ':' + fmgCredential.port) + '/jsonrpc';
+        this.username = fmgCredential.username;
+        this.password = fmgCredential.password;
+    },
+
+    /*
+    * Set session  system properties in the current application
+    * @param  string        session     The current FortiManager session
+    * @return boolean
+    */
+    SetFMGSession: function (session) {
+        return this.node.SaveSysProp(this.currScopeName + '.fmg.session', session, ['sys_script']);
+    },
+
+    /*
+    * Set session time system properties in the current application
+    * @param  string        time     The current FortiManager session time
+    * @return boolean
+    */
+    SetFMGSessionTime: function (time) {
+        // NOTE: ServiceNow will save the time like "1532564599.043", which is an unexpected behavior.
+        return this.node.SaveSysProp(this.currScopeName + '.fmg.sessiontime', time.toString(), ['sys_script']);
+    },
+
+    /*
+    * Set session && session time system properties in the current application
+    * @param  string        session     The current FortiManager session
+    * @param  string        time        The current FortiManager session time
+    * @return boolean
+    */
+    SetFMGSessionAndSessionTime: function (session, time) {
+        if (!(this.SetFMGSession(session))) {
+            return false;
+        }
+
+        if (!(this.SetFMGSessionTime(time))) {
+            return false;
+        }
+
+        return true;
+    },
+
+    /*
+    * Refresh session && send a sepecific request to FortiManager
+    * @param  string        method   The json-rpc method of current request
+    * @param  Array/Object  params   The json-rpc request parameters
+    * @return JSON
+    */
+    SendRequest: function (method, params) {
+        // Validate session and try to login if the session is invalid
+        if (this.IsFMGSessionValid() !== true) {
+
+            // Try to clear the session from the server. However, we do not really care the response of the logout request at this moment.
+            this.FMGApi_Logout();
+
+            var loginResponseObj = this.FMGApi_Login();
+            if (loginResponseObj.result[0].status.code !== 0
+                || loginResponseObj.result[0].data.bodyObj.result[0].status.code !== 0
+                || !(loginResponseObj.result[0].data.bodyObj.session)) {
+                return loginResponseObj;
+            }
+            if (!this.SetFMGSessionAndSessionTime(loginResponseObj.result[0].data.bodyObj.session, this.utilSrv.GetUnixTimestamp())) {
+                return loginResponseObj;
+            }
+        }
+
+        var responseObj = this._SendRequest(method, params);
+
+        // We try the best effort to set the session time but ignore the result of the write opeartion.
+        // NOTE: FMG's design is weird. Because returning HTTP STATUS 500 could indicate the session is timeout.
+        if (responseObj.result[0].data.httpStatus === 500) {
+            this.SetFMGSessionTime(0);
+
+            // Try to clear the session from the server. However, we do not really care the response of the logout request at this moment.
+            this.FMGApi_Logout();
+        } else {
+            this.SetFMGSessionTime(this.utilSrv.GetUnixTimestamp());
+        }
+
+        return responseObj;
+    },
+
+    /*
+    * Send a specific  request to FortiManager
+    * @param  string        method   The json-rpc method of current request
+    * @param  Array/Object  params   The json-rpc request parameters
+    * @return JSON
+    */
+    _SendRequest: function (method, params) {
+        var requestObj = {
+            'id': Date.now(),
+            'jsonrpc': '2.0',
+            'method': method,
+            'verbose': 1, // Need this parameter to be 1, or lese the target and content in FMGApi_GetScriptList will be integer
+            'session': this.GetFMGSession()
+        };
+
+        requestObj['params'] = Array.isArray(params) ? params : [params];
+        return this.restApi.SendRESTRequest(this.restApi.BuildRESTRequestObj('post', this.url, requestObj));
+    },
+
+    FMGAPI_GenerateScriptName: function (number) {
+        return 'SN-' + number + '-' + this.utilSrv.GetUnixTimestamp();
+    },
+
+    FMGAPI_GetWorkspaceMode: function () {
+        var params = [
+            {
+                'url': '/cli/global/system/global',
+                'fields': ['workspace-mode'],
+            },
+        ];
+        return this.SendRequest(this.METHOD_GET, params);
+    },
+
+    FMGAPI_LockADOM: function (adomName) {
+        var params = [
+            {
+                'url': '/dvmdb/adom/' + adomName + '/workspace/lock',
+            },
+        ];
+        return this.SendRequest(this.METHOD_EXEC, params);
+    },
+
+    FMGAPI_UnlockADOM: function (adomName) {
+        var params = [
+            {
+                'url': '/dvmdb/adom/' + adomName + '/workspace/unlock',
+            },
+        ];
+        return this.SendRequest(this.METHOD_EXEC, params);
+    },
+
+    FMGAPI_CommitADOMChange: function (adomName) {
+        var params = [
+            {
+                'url': '/dvmdb/adom/' + adomName + '/workspace/commit',
+            },
+        ];
+        return this.SendRequest(this.METHOD_EXEC, params);
+    },
+
+    /*
+    * Create a script in FortiManager
+    * @param string     adomName            The adom that the script should be created under
+    * @param object     scriptContent       An object that contains content of the script
+    * @return JSON
+    */
+    FMGAPI_CreateScript: function (adomName, scriptContent, scriptNameActual) {
+        var params = [
+            {
+                'data': {
+                    'content': scriptContent.content,
+                    'name': scriptNameActual,
+                    'target': scriptContent.target,
+                    'type': scriptContent.type
+                },
+                'url': '/dvmdb/adom/' + adomName + '/script'
+            }
+        ];
+        return this.SendRequest(this.METHOD_ADD, params);
+    },
+
+    /*
+    * Delete a script in FortiManager
+    * @param string     adomName            The adom that the script should be deleted under
+    * @param object     scriptName          The name of the script to be deleted in FortiManager
+    * @return JSON
+    */
+    FMGAPI_DeleteScript: function (adomName, scriptName) {
+        var params = [
+            {
+                'confirm': 1,
+                'filter': ['name', '==', scriptName],
+                'url': '/dvmdb/adom/' + adomName + '/script'
+            }
+        ];
+        return this.SendRequest(this.METHOD_DELETE, params);
+    },
+
+    /*
+    * Execute a script in Fortimanager based on supplied scripteDetail target, and name
+    * @param object     scriptDetail          An object that contains the target, name, ADOM and other information of a script to be executed on FortiManager
+    * scriptDetail can be an object of {adom:'xxx', type:'xxx', pkg: 'xxx', name: 'xxx', scope: [{name:'xxx', vdom:'xxx'}, {name:'xxx', vdom:'xxx'}]}
+    * @return JSON
+    */
+    FMGAPI_ExecuteScript: function (scriptDetail, scriptNameActual) {
+        var params = [];
+
+        switch (scriptDetail.type) {
+            // ADOM database
+            case 'adom_database':
+                params = [
+                    {
+                        'data': {
+                            'adom': scriptDetail.adom,
+                            'script': scriptNameActual,
+                            'package': scriptDetail.pkg,
+                        },
+                        'url': '/dvmdb/adom/' + scriptDetail.adom + '/script/execute'
+                    }
+                ];
+                break;
+            // Device database && Remote FortiGate
+            case 'device_database':
+            case 'remote_device':
+                params = [
+                    {
+                        'data': {
+                            'adom': scriptDetail.adom,
+                            'scope': scriptDetail.scope,
+                            'script': scriptNameActual,
+                        },
+                        'url': '/dvmdb/adom/' + scriptDetail.adom + '/script/execute'
+                    }
+                ];
+                break;
+            default:
+                throw new Error('Invalid ExecuteScript script type: ' + scriptDetail.type);
+        }
+
+        return this.SendRequest(this.METHOD_EXEC, params);
+    },
+
+    /*
+    * Check the status of an script that has been executed on FortiManager based on supplied taskID
+    * @param int     taskID         The taskID of the executed script
+    * @return JSON
+    */
+    FMGAPI_ExecuteScriptStatus: function (taskID) {
+        var params = [
+            {
+                'filter': ['id', '==', taskID],
+                'url': '/task/task'
+            }
+        ];
+        return this.SendRequest(this.METHOD_GET, params);
+    },
+
+    // TODO: the following may not need anymore once migrated?
+    ConvDeviceArrToScope: function (deviceArr) {
+        var arr = [];
+
+        if (Array.isArray(deviceArr) === true) {
+            for (var i = 0; i < deviceArr.length; i++) {
+                //var deviecPair = deviceArr[i].split(':');
+
+                //if (deviecPair.length != 2) {
+                //    continue;
+                //}
+
+                arr.push({
+                    name: deviceArr[i],
+                    vdom: 'root',
+                })
+            }
+        }
+        return arr;
+    },
+
+    FilterScriptArr: function (scriptArr, prefix) {
+        var outArr = [];
+
+        if (Array.isArray(scriptArr) !== true) {
+            return outArr;
+        }
+
+        for (var i = 0; i < scriptArr.length; i++) {
+            if (!('name' in scriptArr[i])) {
+                continue;
+            }
+
+            if (scriptArr[i].name.substr(0, prefix.length).toUpperCase() != prefix.toUpperCase()) {
+                continue;
+            }
+
+            outArr.push(scriptArr[i]);
+        }
+
+        return outArr;
+    },
+
+    ConvDeviceArrToVDOMPair: function (deviceArr) {
+        var outArr = [];
+
+        if (Array.isArray(deviceArr) !== true) {
+            return outArr;
+        }
+
+        for (var i = 0; i < deviceArr.length; i++) {
+            if (!('vdom' in deviceArr[i])) {
+                continue;
+            }
+
+            if (Array.isArray(deviceArr[i].vdom) !== true) {
+                continue;
+            }
+
+            for (var j = 0; j < deviceArr[i].vdom.length; j++) {
+                outArr.push({
+                    name: deviceArr[i].name,
+                    vdom: deviceArr[i].vdom[j].name,
+                });
+            }
+        }
+
+        return outArr;
+    },
+
+    FMGAPI_DeployPolicy: function (adom, pkg, scope) {
+        var params = [
+            {
+                'url': '/securityconsole/install/package',
+                'data': [{
+                    'adom': adom,
+                    'pkg': pkg,
+                    'scope': scope,
+                }],
+            }
+        ];
+        return this.SendRequest(this.METHOD_EXEC, params);
+    },
+
+    FMGAPI_DeployDevice: function (adom, scope) {
+        var params = [
+            {
+                'url': '/securityconsole/install/device',
+                'data': [{
+                    'adom': adom,
+                    'flags': [
+                        'none',
+                    ],
+                    'scope': scope,
+                }],
+            }
+        ];
+        return this.SendRequest(this.METHOD_EXEC, params);
+    },
+
+    /*
+    * Login to FortiManager
+    * @return JSON
+    */
+    FMGApi_Login: function () {
+        this.RefreshFMGCredential();
+
+        var params = {
+            'url': '/sys/login/user',
+            'data': [
+                {
+                    'user': this.username,
+                    'passwd': this.password
+                },
+            ],
+        };
+
+        return this._SendRequest(this.METHOD_EXEC, params);
+    },
+
+    /*
+    * Logout the current session on FortiManager
+    * @return JSON
+    */
+    FMGApi_Logout: function () {
+        this.RefreshFMGCredential();
+
+        var params = {
+            'url': '/sys/logout'
+        };
+
+        return this._SendRequest(this.METHOD_EXEC, params);
+    },
+
+    /*
+    * Get All availble ADOMs names of a product.
+    * @param string     restricted_prds     The type that the ADOMs belong to.
+    * @param string     mode                The mode to filter ADOMS.
+    * @return JSON
+    */
+    FMGApi_GetAdom: function (restricted_prds, mode) {
+        var params = [
+            {
+                'fields': ['name'],
+                'filter': [['restricted_prds', '==', restricted_prds], '&&', ['mode', '==', mode]],
+                'url': '/dvmdb/adom'
+            }
+        ];
+        return this.SendRequest(this.METHOD_GET, params);
+    },
+
+    /*
+    * Get All availble devices names in FortiManager for the ADOM supplied
+    * @param string     adomName            The ADOM to get device for
+    * @return JSON
+    */
+    FMGApi_GetDeviceList: function (adomName) {
+        var params = [
+            {
+                'fields': ['name'],
+                "loadsub": 0,
+                'url': '/dvmdb/adom/' + adomName + '/device',
+            }
+        ];
+        return this.SendRequest(this.METHOD_GET, params);
+    },
+
+    FMGApi_IsValidDevices: function (adom, devices) {
+
+        if (Array.isArray(devices) !== true) {
+            return false;
+        }
+
+        var responseObj = this.FMGApi_GetDeviceList(adom);
+        if (!('result' in responseObj)
+            || !('0' in responseObj.result)
+            || !('data' in responseObj.result[0])
+            || !('bodyObj' in responseObj.result[0].data)
+            || !('result' in responseObj.result[0].data.bodyObj)
+            || !('0' in responseObj.result[0].data.bodyObj.result)
+            || !('status' in responseObj.result[0].data.bodyObj.result[0])
+            || !('code' in responseObj.result[0].data.bodyObj.result[0].status)
+            || (responseObj.result[0].data.bodyObj.result[0].status.code !== 0)
+            || !('data' in responseObj.result[0].data.bodyObj.result[0])
+        ) {
+            return false;
+        }
+
+        if (Array.isArray(responseObj.result[0].data.bodyObj.result[0].data) !== true) {
+            return false;
+        }
+
+        for (var i = 0; i < devices.length; i++) {
+            var isFound = false;
+
+            for (var j = 0; j < responseObj.result[0].data.bodyObj.result[0].data.length; j++) {
+                if (devices[i] === responseObj.result[0].data.bodyObj.result[0].data[j].name) {
+                    isFound = true;
+                }
+            }
+
+            if (isFound !== true) {
+                return false;
+            }
+        }
+
+        return true;
+    },
+
+    /*
+    * Get All availble policy packages in FortiManager for the ADOM supplied
+    * @param string     adomName            The ADOM to get device for
+    * @return JSON
+    */
+    FMGApi_GetPolicyPKGList: function (adomName) {
+        var params = [
+            {
+                "fields": ["name"],
+                "type": "pkg",
+                "apiver": 3,
+                'url': '/pm/pkg/adom/' + adomName,
+            }
+        ];
+        return this.SendRequest(this.METHOD_GET, params);
+    },
+
+    FMGApi_IsValidPolicy: function (adom, policy) {
+        if (!(policy.length > 0)) {
+            return false;
+        }
+
+        var responseObj = this.FMGApi_GetPolicyPKGList(adom);
+        if (!('result' in responseObj)
+            || !('0' in responseObj.result)
+            || !('data' in responseObj.result[0])
+            || !('bodyObj' in responseObj.result[0].data)
+            || !('result' in responseObj.result[0].data.bodyObj)
+            || !('0' in responseObj.result[0].data.bodyObj.result)
+            || !('status' in responseObj.result[0].data.bodyObj.result[0])
+            || !('code' in responseObj.result[0].data.bodyObj.result[0].status)
+            || (responseObj.result[0].data.bodyObj.result[0].status.code !== 0)
+            || !('data' in responseObj.result[0].data.bodyObj.result[0])
+        ) {
+            return false;
+        }
+
+        for (var j = 0; j < responseObj.result[0].data.bodyObj.result[0].data.length; j++) {
+            if (policy === responseObj.result[0].data.bodyObj.result[0].data[j].name) {
+                return true
+            }
+        }
+
+        return false;
+    },
+
+    /*
+    * Get All availble scripts in an ADOM(including grouped scripts) if scriptGroupName is not supplied, else get scripts in the supplied scriptGroupName only
+    * @param string     adomName            The ADOM to get scripts for.
+    * @param array      custom_fields       Default fields filter is name, object member(group), target, type and content. If this field is supplied, custom fields is used.
+    * @param string     scriptGroupName     If supplied, this API will get scripts in supplied script group only
+    * @return JSON
+    */
+    FMGApi_GetScriptList: function (adomName, custom_fields, scriptGroupName) {
+        if (!scriptGroupName) {
+            scriptGroupName = '';
+        }
+
+        // Need target && type when creating a new teplate
+        var fields = ['name', 'object member', 'content', 'target', 'type'];
+        if (custom_fields) {
+            fields = custom_fields;
+        }
+
+        var params = [
+            {
+                'fields': fields,
+                'options': 'object member',
+                'url': '/dvmdb/adom/' + adomName + '/script/' + scriptGroupName
+            }
+        ];
+        return this.SendRequest(this.METHOD_GET, params);
+    },
+
+    FMGApi_GetScriptData: function (adom, script) {
+        var fields = ['name', 'object member', 'content', 'target', 'type'];
+        var params = [
+            {
+                'fields': fields,
+                'options': 'object member',
+                'filter': ['name', '==', script],
+                'url': '/dvmdb/adom/' + adom + '/script'
+            }
+        ];
+
+        return this.SendRequest(this.METHOD_GET, params);
+    },
+
+    FMGApi_GetScriptDataIfValid: function (adom, script) {
+        var responseObj = this.FMGApi_GetScriptData(adom, script);
+
+        if (!('result' in responseObj)
+            || !('0' in responseObj.result)
+            || !('data' in responseObj.result[0])
+            || !('bodyObj' in responseObj.result[0].data)
+            || !('result' in responseObj.result[0].data.bodyObj)
+            || !('0' in responseObj.result[0].data.bodyObj.result)
+            || !('status' in responseObj.result[0].data.bodyObj.result[0])
+            || !('code' in responseObj.result[0].data.bodyObj.result[0].status)
+            || (responseObj.result[0].data.bodyObj.result[0].status.code !== 0)
+            || !('data' in responseObj.result[0].data.bodyObj.result[0])
+            || !('0' in responseObj.result[0].data.bodyObj.result[0].data)
+            || !('content' in responseObj.result[0].data.bodyObj.result[0].data[0])
+        ) {
+            return false;
+        }
+        return responseObj.result[0].data.bodyObj.result[0].data[0];
+    },
+
+    FMGApi_ConvScriptContentIfValid: function (scriptContent, scriptVars) {
+        var regex = /\$[{]([a-zA-Z0-9_]+)[}]/gm;
+        var m;
+        var arr = [];
+
+        while ((m = regex.exec(scriptContent)) !== null) {
+            var data = {};
+
+            m.forEach(function (match, groupIndex) {
+                if (groupIndex === 0) {
+                    data.variable = match;
+                } else {
+                    data.fieldname = match;
+                    data.value = '';
+                }
+            });
+
+            arr.push(data);
+        }
+
+        for (var i = 0; i < arr.length; i++) {
+            if (!(arr[i].fieldname in scriptVars)) {
+                return false;
+            }
+
+            if (!(scriptVars[arr[i].fieldname].length > 0)) {
+                return false;
+            }
+
+            arr[i].value = scriptVars[arr[i].fieldname];
+        }
+
+        return arr;
+    },
+
+    FMGApi_ReplaceScriptVars: function (scriptContent, scriptContentConfiguredProgress) {
+        for (var i = 0; i < scriptContentConfiguredProgress.length; i++) {
+            scriptContent = scriptContent.replace(scriptContentConfiguredProgress[i].variable, scriptContentConfiguredProgress[i].value);
+        }
+
+        return scriptContent;
+    },
+
+    /*
+    * Check to see if FMG version is suppourted. All FMG version greater than 6.0.1 are suppourted
+    * @param  Object  systemStatusResponseObj  the object to analyze whether FMG version is suppourted
+    * @return boolean
+    */
+    IsSupportedFMGVersion: function (systemStatusResponseObj) {
+        if (!('data' in systemStatusResponseObj.result[0])
+            || !('bodyObj' in systemStatusResponseObj.result[0].data)
+            || !('result' in systemStatusResponseObj.result[0].data.bodyObj)
+            || !('0' in systemStatusResponseObj.result[0].data.bodyObj.result)
+            || !('data' in systemStatusResponseObj.result[0].data.bodyObj.result[0])
+        ) {
+            return false;
+        }
+
+        // Suppourt all version greater than or equal to 5.6.3
+        if (!(systemStatusResponseObj.result[0].data.bodyObj.result[0].data.Major >= 5)) {
+            return false;
+        }
+
+        if (systemStatusResponseObj.result[0].data.bodyObj.result[0].data.Major === 5) {
+            if (!(systemStatusResponseObj.result[0].data.bodyObj.result[0].data.Minor >= 6)) {
+                return false;
+            }
+
+            if (systemStatusResponseObj.result[0].data.bodyObj.result[0].data.Minor === 6
+                && !(systemStatusResponseObj.result[0].data.bodyObj.result[0].data.Patch >= 3)
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    },
+    type: 'FMGApi'
+};]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-19 23:06:29</sys_created_on>
+        <sys_id>12169b32db39a300310473e1ba96195e</sys_id>
+        <sys_mod_count>98</sys_mod_count>
+        <sys_name>FMGApi</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_script_include_12169b32db39a300310473e1ba96195e</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-04-11 17:01:59</sys_updated_on>
+    </sys_script_include>
+</record_update>

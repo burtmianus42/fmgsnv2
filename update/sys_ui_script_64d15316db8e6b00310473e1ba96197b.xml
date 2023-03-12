@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ui_script">
+    <sys_ui_script action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <description/>
+        <global>false</global>
+        <name>x_forti_fmgintgv2.FMGAppRequest</name>
+        <script><![CDATA[class FMGAppRequest {
+    constructor(method, url, data = {}) {
+        if (!(['GET', 'POST'].indexOf(method.toUpperCase()) > -1)) {
+            method = 'GET';
+        }
+
+        this.data = {
+            data: {
+                method: method,
+                params: [
+                    {
+                        url: url,
+                        data: data,
+                    },
+                ],
+            }
+        };
+    }
+
+    getData() {
+        return this.data;
+    }
+
+    getDataString() {
+        return JSON.stringify(this.data);
+    }
+}]]></script>
+        <script_name>FMGAppRequest</script_name>
+        <sys_class_name>sys_ui_script</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-30 19:45:06</sys_created_on>
+        <sys_id>64d15316db8e6b00310473e1ba96197b</sys_id>
+        <sys_mod_count>1</sys_mod_count>
+        <sys_name>x_forti_fmgintgv2.FMGAppRequest</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_ui_script_64d15316db8e6b00310473e1ba96197b</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-04-02 23:33:11</sys_updated_on>
+        <ui_type>0</ui_type>
+        <use_scoped_format>false</use_scoped_format>
+    </sys_ui_script>
+</record_update>

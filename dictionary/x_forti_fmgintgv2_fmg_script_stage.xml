@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?><database>
+    <element extends="sys_import_set_row" label="fmg_script_stage" max_length="40" name="x_forti_fmgintgv2_fmg_script_stage" type="collection">
+        <element attributes="import_attribute_name=u_adom,edge_encryption_enabled=true" label="Adom" max_length="100" name="u_adom" type="string"/>
+        <element attributes="import_attribute_name=u_description,edge_encryption_enabled=true" label="Description" max_length="1000" name="u_description" type="string"/>
+        <element attributes="import_attribute_name=u_device_list,edge_encryption_enabled=true" label="Device list" max_length="65000" name="u_device_list" type="string"/>
+        <element attributes="import_attribute_name=u_installation_device,edge_encryption_enabled=true" label="Installation device" max_length="65000" name="u_installation_device" type="string"/>
+        <element attributes="import_attribute_name=u_is_submitted,edge_encryption_enabled=true" label="Is submitted" max_length="40" name="u_is_submitted" type="string"/>
+        <element attributes="import_attribute_name=u_number,edge_encryption_enabled=true" default="javascript:global.getNextObjNumberPadded();" label="Number" max_length="40" name="u_number" type="string"/>
+        <element attributes="import_attribute_name=u_policy_package,edge_encryption_enabled=true" label="Policy package" max_length="100" name="u_policy_package" type="string"/>
+        <element attributes="import_attribute_name=u_policy_package_list,edge_encryption_enabled=true" label="Policy package list" max_length="65000" name="u_policy_package_list" type="string"/>
+        <element attributes="import_attribute_name=u_script_content,edge_encryption_enabled=true" label="Script content" max_length="65000" name="u_script_content" type="string"/>
+        <element attributes="import_attribute_name=u_script_content_configured,edge_encryption_enabled=true" label="Script content configured" max_length="65000" name="u_script_content_configured" type="string"/>
+        <element attributes="import_attribute_name=u_script_content_configured_progress,edge_encryption_enabled=true" label="u_script_content_configured_progress" max_length="65000" name="u_script_conte_gured_progress" type="string"/>
+        <element attributes="import_attribute_name=u_script_index_selected,edge_encryption_enabled=true" label="Script index selected" max_length="40" name="u_script_index_selected" type="string"/>
+        <element attributes="import_attribute_name=u_script_list,edge_encryption_enabled=true" label="Script list" max_length="65000" name="u_script_list" type="string"/>
+        <element attributes="import_attribute_name=u_script_name,edge_encryption_enabled=true" label="Script name" max_length="100" name="u_script_name" type="string"/>
+        <element attributes="import_attribute_name=u_script_type,edge_encryption_enabled=true" label="Script type" max_length="100" name="u_script_type" type="string"/>
+    </element>
+</database>

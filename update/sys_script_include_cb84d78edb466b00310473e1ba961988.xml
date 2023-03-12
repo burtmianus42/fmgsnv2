@@ -1,0 +1,1124 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>package_private</access>
+        <active>true</active>
+        <api_name>x_forti_fmgintgv2.FMGJSONRPC</api_name>
+        <caller_access/>
+        <client_callable>true</client_callable>
+        <description/>
+        <name>FMGJSONRPC</name>
+        <script><![CDATA[/* global global gs Class GlideRecord FMGApi FMGAppResponse DataObjectParser UtilSrv */
+var FMGJSONRPC = Class.create();
+
+FMGJSONRPC.prototype = Object.extendsObject(global.AbstractAjaxProcessor, {
+    // NOTE: initialize function cannot be exist if extending global.AbstractAjaxProcessor
+    //initialize: function() {
+    //},
+
+    /*
+    * Get sys properties from SN
+    */
+    SysPropGet: function () {
+        var currScopeName = gs.getCurrentScopeName();
+
+        //
+        var utilSrv = new UtilSrv();
+        var fmgAppResponse = new FMGAppResponse();
+        var statusObj = FMGAppResponse.STATUS_INIT;
+
+        var responseObj = {
+            sysProp: {}
+        };
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.sys_prop_read') !== true && gs.hasRole(currScopeName + '.sys_prop_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'SysPropGet', 'Insufficient permission to access the resources');
+            }
+
+            // RELEASE: Increase version before releasing
+            var app_version = '2.0.33';
+
+            // Check if user has sys properties write permission
+            var sys_write = 0;
+            if (gs.hasRole(currScopeName + '.sys_prop_write') === true) {
+                sys_write = 1;
+            }
+
+            responseObj.sysProp = {
+                fmg: {
+                    domain: gs.getProperty(currScopeName + '.fmg.domain'),
+                    port: Number(gs.getProperty(currScopeName + '.fmg.port')),
+                    username: gs.getProperty(currScopeName + '.fmg.username'),
+                    password: '0000000000',
+                    version: gs.getProperty(currScopeName + '.fmg.version'),
+                    workspacemode: gs.getProperty(currScopeName + '.fmg.workspacemode'),
+                    adomlist: gs.getProperty(currScopeName + '.fmg.adomlist') ? JSON.parse(gs.getProperty(currScopeName + '.fmg.adomlist')) : '',
+                    fmgadomlist: gs.getProperty(currScopeName + '.fmg.fmgadomlist') ? JSON.parse(gs.getProperty(currScopeName + '.fmg.fmgadomlist')) : '',
+                    scripttplprefix: gs.getProperty(currScopeName + '.fmg.scripttplprefix'),
+                    isdeletescript: Number(gs.getProperty(currScopeName + '.fmg.isdeletescript')),
+                },
+                jsonrpc: {
+                    username: gs.getProperty(currScopeName + '.jsonrpc.username'),
+                    password: '0000000000'
+                },
+                appversion: app_version,
+                syswrite: sys_write
+            };
+
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+
+        return fmgAppResponse.getDataString();
+    },
+    /*
+    * Save sys properties in SN
+    */
+    SysPropSave: function () {
+        var currScopeName = gs.getCurrentScopeName();
+
+        //
+        var utilSrv = new UtilSrv();
+        var fmgApi = new FMGApi();
+        var fmgAppResponse = new FMGAppResponse();
+        var node = new Node();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+
+        var allowedFieldNameArr = [
+            'appversion',
+            'fmg.domain',
+            'fmg.password',
+            'fmg.port',
+            'fmg.username',
+            'fmg.adomlist',
+            'fmg.fmgadomlist',
+            'fmg.scripttplprefix',
+            'fmg.isdeletescript',
+            'fmg.version',
+            'fmg.workspacemode',
+            'jsonrpc.password',
+            'jsonrpc.username',
+            'syswrite'
+        ];
+
+        //
+        var responseObj = {
+            msgArr: [],
+            fmgVersion: '',
+            fmgWorkspaceMode: '',
+        };
+
+        var restapi = new RESTApi();
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.sys_prop_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'Insufficient permission to access the resources');
+            }
+
+            // Stringify adomlist
+            var requestObject = (JSON.parse(this.getParameter('sysparm_requestObj'))).data;
+
+            if (requestObject.params[0].data.fmg.hasOwnProperty('adomlist')) {
+                // length function computes the length of string and JSON
+                if (requestObject.params[0].data.fmg.adomlist.length) {
+                    requestObject.params[0].data.fmg.adomlist = JSON.stringify(requestObject.params[0].data.fmg.adomlist);
+                }
+            }
+
+            // Stringify fmgadomlist
+            if (requestObject.params[0].data.fmg.hasOwnProperty('fmgadomlist')) {
+                // length function computes the length of string and JSON
+                if (requestObject.params[0].data.fmg.fmgadomlist.length) {
+                    requestObject.params[0].data.fmg.fmgadomlist = JSON.stringify(requestObject.params[0].data.fmg.fmgadomlist);
+                }
+            }
+
+            // TODO: this inside loop needs to be reviewed
+            for (var i = 0; i < requestObject.params.length; i++) {
+                var obj = requestObject.params[i];
+                var dataFlatten = DataObjectParser.untranspose(obj.data);
+
+                Object.keys(dataFlatten).forEach(function (key) {
+                    if (!(allowedFieldNameArr.indexOf(key) > -1)) {
+                        throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'Invalid field name.' + key);
+                    }
+
+                    // Ignore if the password did not change.
+                    if ((['fmg.password', 'jsonrpc.password'].indexOf(key) > -1) && dataFlatten[key] === '0000000000') {
+                        return true;
+                    }
+
+                    // Ignore if it's fmg.version or APP version or syswrite
+                    if (
+                        key === 'fmg.version'
+                        || key === 'appversion'
+                        || key === 'syswrite'
+                        || key === 'fmg.workspacemode'
+                    ) {
+                        return true;
+                    }
+
+                    // Validation for each field
+                    if (key === 'fmg.domain' && utilSrv.IsValidDomain(dataFlatten[key]) !== true) {
+                        throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'Invalid FortiManager domain.');
+                    }
+
+                    if (key === 'fmg.port' && utilSrv.IsNumeric(dataFlatten[key]) !== true) {
+                        throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'Invalid FortiManager port.');
+                    }
+
+                    if (key === 'fmg.fmgadomlist' || key === 'fmg.adomlist') {
+                        return true;
+                    }
+
+                    // Set value
+                    if (key === 'fmg.port') {
+                        dataFlatten[key] = parseInt(dataFlatten[key]).toString();
+                    }
+
+                    // Check if the ServiceNow user exists, and has valid password and appropriate permissions
+                    if (key === 'jsonrpc.username') {
+
+                        // Check if user exists
+                        var usr_record = node.GetRecord('sys_user', { where: { user_name: dataFlatten[key] } });
+                        if (!usr_record) {
+                            throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'ServiceNow API user ' + dataFlatten[key] + ' does not exist.');
+                        }
+
+                        // Get fmg_script_write role ID
+                        var fmg_role = node.GetRecord('sys_user_role', { where: { name: 'x_forti_fmgintgv2.fmg_script_write' } }, true);
+                        if (!fmg_role) {
+                            throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'fmg_script_write role does not exist.');
+                        }
+
+                        // Get import_transformer role ID
+                        var imp_role = node.GetRecord('sys_user_role', { where: { name: 'import_transformer' } }, true);
+                        if (!imp_role) {
+                            throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'import_transformer role does not exist.');
+                        }
+
+                        // Check if user has fmg_script_write role
+                        var fmg_exists = node.GetRecord('sys_user_has_role', { where: { user: usr_record.getValue('sys_id'), role: fmg_role.getValue('sys_id') } }, true);
+                        if (!fmg_exists) {
+                            throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'ServiceNow API user ' + dataFlatten[key] + ' needs to have x_forti_fmgintgv2.fmg_script_write role assigned.');
+                        }
+
+                        // Check if user has import_transformer role
+                        var imp_exists = node.GetRecord('sys_user_has_role', { where: { user: usr_record.getValue('sys_id'), role: imp_role.getValue('sys_id') } }, true);
+                        if (!imp_exists) {
+                            throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'ServiceNow API user ' + dataFlatten[key] + ' needs to have import_transformer role assigned.');
+                        }
+                    }
+
+                    var sysPropSaveResult = node.SaveSysProp(currScopeName + '.' + key, dataFlatten[key], ['x_forti_fmgintgv2.sys_prop_write']);
+                    if (!sysPropSaveResult) {
+                        throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'Failed to save the ' + key + ' field.');
+                    }
+                });
+
+                // Valid password?
+                var auth_result = restapi.SendRESTRequest(restapi.BuildRESTRequestObj('get', gs.getProperty('glide.servlet.uri') + 'api/x_forti_fmgintgv2/fmg/uservalid', null, gs.getProperty(currScopeName + '.jsonrpc.username'), gs.getProperty(currScopeName + '.jsonrpc.password')));
+                if (!auth_result.result[0].data.bodyObj.hasOwnProperty('result') || auth_result.result[0].data.bodyObj.result.status !== 0) {
+                    throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'ServiceNow API password is invalid.');
+                }
+
+                responseObj.msgArr.push({
+                    type: 'success',
+                    msg: 'System properties have been saved.',
+                });
+
+                // Init fmg version and permission flag
+                var fmg_version_valid = false;
+                var fmg_permission_valid = false;
+
+                // Invalidate the session before checking login credential while getting the system status for later use
+                fmgApi.SetFMGSessionTime(0);
+
+                //
+                var systemStatusResponseObj = fmgApi.GetFMGSystemStatus();
+
+                if (
+                    !('result' in systemStatusResponseObj)
+                    || !('0' in systemStatusResponseObj.result)
+                    || !('status' in systemStatusResponseObj.result[0])
+                    || !('code' in systemStatusResponseObj.result[0].status)
+                    || systemStatusResponseObj.result[0].status.code !== 0
+                    || systemStatusResponseObj.result[0].data.bodyObj.result[0].status.code !== 0
+                ) {
+                    responseObj.msgArr.push({
+                        type: 'warning',
+                        msg: 'Error occurred while attempting to connect to FortiManager. Please double check your FortiManager domain, port, username, password or network connection.',
+                    });
+                }
+
+                // Save fmg.version
+                if ('data' in systemStatusResponseObj.result[0]
+                    && 'bodyObj' in systemStatusResponseObj.result[0].data
+                    && 'result' in systemStatusResponseObj.result[0].data.bodyObj
+                    && '0' in systemStatusResponseObj.result[0].data.bodyObj.result
+                    && 'data' in systemStatusResponseObj.result[0].data.bodyObj.result[0]
+                ) {
+                    fmg_version_valid = true;
+                    // NOTE: We ignore the save result as we do not really care.
+                    node.SaveSysProp(currScopeName + '.fmg.version', systemStatusResponseObj.result[0].data.bodyObj.result[0].data.Version, ['x_forti_fmgintgv2.sys_prop_write']);
+                    responseObj.fmgVersion = systemStatusResponseObj.result[0].data.bodyObj.result[0].data.Version;
+                }
+
+                // Save fmg.workspacemode
+                var workspaceResponseObj = fmgApi.FMGAPI_GetWorkspaceMode();
+
+                if (
+                    !('result' in workspaceResponseObj)
+                    || !('0' in workspaceResponseObj.result)
+                    || !('data' in workspaceResponseObj.result[0])
+                    || !('bodyObj' in workspaceResponseObj.result[0].data)
+                    || !('result' in workspaceResponseObj.result[0].data.bodyObj)
+                    || !('0' in workspaceResponseObj.result[0].data.bodyObj.result)
+                    || !('status' in workspaceResponseObj.result[0].data.bodyObj.result[0])
+                    || !('code' in workspaceResponseObj.result[0].data.bodyObj.result[0].status)
+                    || workspaceResponseObj.result[0].data.bodyObj.result[0].status.code !== 0
+                    || !('data' in workspaceResponseObj.result[0].data.bodyObj.result[0])
+                    || !('workspace-mode' in workspaceResponseObj.result[0].data.bodyObj.result[0].data)
+                ) {
+                    responseObj.msgArr.push({
+                        type: 'warning',
+                        msg: 'Error occurred while attempting to get the workspace mode. Please try again later.',
+                    });
+                } else {
+                    if (node.SaveSysProp(currScopeName + '.fmg.workspacemode', workspaceResponseObj.result[0].data.bodyObj.result[0].data['workspace-mode'], ['x_forti_fmgintgv2.sys_prop_write']) === false) {
+                        responseObj.msgArr.push({
+                            type: 'warning',
+                            msg: 'Error occurred while attempting to save the workspace mode. Please try again later.',
+                        });
+                    } else {
+                        responseObj.fmgWorkspaceMode = workspaceResponseObj.result[0].data.bodyObj.result[0].data['workspace-mode'];
+                    }
+
+                    // Check supported workspace mode
+                    if (!(['disabled', 'normal'].indexOf(workspaceResponseObj.result[0].data.bodyObj.result[0].data['workspace-mode']) > -1)) {
+                        responseObj.msgArr.push({
+                            type: 'warning',
+                            msg: 'The "' + workspaceResponseObj.result[0].data.bodyObj.result[0].data['workspace-mode'] + '" workspace mode is not supported',
+                        });
+                    }
+                }
+
+                // Determine whether is supported fmg version
+                if (!responseObj.fmgVersion) {
+                    responseObj.msgArr.push({
+                        type: 'info',
+                        msg: 'Unable to retrieve FortiManager version.',
+                    });
+                } else if (fmgApi.IsSupportedFMGVersion(systemStatusResponseObj) !== true) {
+                    responseObj.msgArr.push({
+                        type: 'warning',
+                        msg: 'FortiManager ' + responseObj.fmgVersion + ' is not a supported version.',
+                    });
+                }
+
+                // Check to see if the valid FMG user has permission
+                var fmgpermission_responseObj = fmgApi.FMGApi_GetDeviceList('root');
+                if (typeof (fmgpermission_responseObj) !== 'object'
+                    || fmgpermission_responseObj.result[0].status.code !== 0
+                    || !fmgpermission_responseObj.result[0].data.bodyObj.hasOwnProperty('result')
+                    || !fmgpermission_responseObj.result[0].data.bodyObj.result[0].hasOwnProperty('status')
+                    || fmgpermission_responseObj.result[0].data.bodyObj.result[0].status.code !== 0
+                ) {
+                    responseObj.msgArr.push({
+                        type: 'warning',
+                        msg: 'FortiManager API user account is unable to access FortiManager. A network error might occurred, or this account might be missing json-rpc permission'
+                    });
+                }
+                else {
+                    fmg_permission_valid = true;
+                }
+
+                // Get FMG adom list
+                if (fmg_permission_valid && fmg_version_valid) {
+                    // Get Fortigate Adom
+                    var fetchAdomResponseObj = fmgApi.FMGApi_GetAdom('fos', 'gms');
+
+                    if (fetchAdomResponseObj.result[0].status.code !== 0 || !fetchAdomResponseObj.result[0].data.bodyObj.result[0].data) {
+                        // return;
+                        throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'Unable to get FortiGate Adoms on FortiManager');
+                    }
+
+                    var clean_retrieved_fmgadomlist = [];
+                    for (var i = 0; i < fetchAdomResponseObj.result[0].data.bodyObj.result[0].data.length; i++) {
+
+                        if (fetchAdomResponseObj.result[0].data.bodyObj.result[0].data[i].hasOwnProperty('name')) {
+                            clean_retrieved_fmgadomlist.push(fetchAdomResponseObj.result[0].data.bodyObj.result[0].data[i].name);
+                        }
+                    }
+
+                    if (clean_retrieved_fmgadomlist.length == 0) {
+                        // return;
+                        throw utilSrv.GenerateCustomizedError('', 'SysPropSave', 'Unable to find FortiGate Adoms on FortiManager');
+                    }
+
+                    // Set up new fmgadom list in front end
+                    responseObj.fmgadomlist = clean_retrieved_fmgadomlist;
+
+                    // Save as string
+                    // TODO: review the logic here, how to compare "adom change"?
+                    var retrieved = JSON.stringify(clean_retrieved_fmgadomlist);
+
+                    // fmgadomlist changed?
+                    if (retrieved !== requestObject.params[0].data.fmg.fmgadomlist) {
+                        // Save as an string
+                        node.SaveSysProp(currScopeName + '.fmg.fmgadomlist', retrieved, ['x_forti_fmgintgv2.sys_prop_write']);
+                        node.SaveSysProp(currScopeName + '.fmg.adomlist', '', ['x_forti_fmgintgv2.sys_prop_write']);
+
+                        responseObj.msgArr.push({
+                            type: 'warning',
+                            msg: 'FortiManager Adom list has been updated or populated. Please select one or more availble FortiGate ADOM'
+                        });
+
+                        // Flag to reset adomlist
+                        responseObj.adomlist = '';
+                    }
+                    else {
+                        if (requestObject.params[0].data.fmg.adomlist === '') {
+
+                            responseObj.msgArr.push({
+                                type: 'warning',
+                                msg: 'Please select one or more availble FortiGate ADOM'
+                            });
+
+                        }
+                        else {
+                            node.SaveSysProp(currScopeName + '.fmg.adomlist', requestObject.params[0].data.fmg.adomlist, ['x_forti_fmgintgv2.sys_prop_write']);
+                        }
+                    }
+                }
+                else {
+                    responseObj.msgArr.push({
+                        type: 'warning',
+                        msg: 'Unable to retrieve updated FortiGate Adom list on FortiManager.'
+                    });
+                }
+            }
+
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+
+        return fmgAppResponse.getDataString();
+    },
+    ADOMList: function () {
+        var currScopeName = gs.getCurrentScopeName();
+        return gs.getProperty(currScopeName + '.fmg.adomlist');
+    },
+    /*
+    * Get FMG Fortigate ADOM list
+    */
+    FMGADOMList: function () {
+        var currScopeName = gs.getCurrentScopeName();
+
+        var utilSrv = new UtilSrv();
+        var fmgAppResponse = new FMGAppResponse();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+        var responseObj = {};
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.fmg_script_read') !== true && gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGADOMList', 'Insufficient permission to access the resources');
+            }
+
+            responseObj = {
+                APIADOMList: []
+            };
+
+            var fmg_obj = new FMGApi();
+            var response = fmg_obj.FMGApi_GetAdom('fos', 'gms');
+
+            if (typeof response !== 'object' || response === null) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGADOMList', 'FMGADOMList Response is null or non object');
+            }
+
+            if (!response.hasOwnProperty('result')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGADOMList', 'FMGADOMList Response is missing result property');
+            }
+
+            if (!response.result[0]) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGADOMList', 'FMGADOMList response.result is empty');
+            }
+
+            if (!response.result[0].hasOwnProperty('data')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGADOMList', 'FMGADOMList response.result[0] is missing data property');
+            }
+
+            if (!response.result[0].data.hasOwnProperty('httpStatus')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGADOMList', 'FMGADOMList response.result[0].data is missing httpStatus property');
+            }
+
+            if (response.result[0].data.httpStatus != 200) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGADOMList', 'FMGADOMList response.result[0].data.httpStatus is not 200');
+            }
+
+            if (!response.result[0].data.hasOwnProperty('bodyObj')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGADOMList', 'FMGADOMList response.result[0].data does not have bodyObj');
+            }
+
+            responseObj.APIADOMList = response.result[0].data.bodyObj.result[0].data;
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+        return fmgAppResponse.getDataString();
+    },
+
+    /*
+    * Get FMG device list names of ADOM supplied through FMG APIl
+    */
+    FMGAPIDeviceList: function () {
+        var currScopeName = gs.getCurrentScopeName();
+        var utilSrv = new UtilSrv();
+        var fmgAppResponse = new FMGAppResponse();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+        var responseObj = {};
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.fmg_script_read') !== true && gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIDeviceList', 'Insufficient permission to access the resources');
+            }
+
+            responseObj = {
+                APIDeviceList: []
+            };
+
+            // Adom
+            var adom = this.getParameter('sysparm_adom');
+            var fmg_obj = new FMGApi();
+            var response = fmg_obj.FMGApi_GetDeviceList(adom);
+
+            if (typeof response !== 'object' || response === null) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIDeviceList', 'FMGAPIDeviceList Response is null or non object');
+            }
+
+            if (!response.hasOwnProperty('result')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIDeviceList', 'FMGAPIDeviceList Response is missing result property');
+            }
+
+            if (!response.result[0]) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIDeviceList', 'FMGAPIDeviceList response.result is empty');
+            }
+
+            if (!response.result[0].hasOwnProperty('data')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIDeviceList', 'FMGAPIDeviceList response.result[0] is missing data property');
+            }
+
+            if (!response.result[0].data.hasOwnProperty('httpStatus')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIDeviceList', 'FMGAPIDeviceList response.result[0].data is missing httpStatus property');
+            }
+
+            if (response.result[0].data.httpStatus != 200) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIDeviceList', 'FMGAPIDeviceList response.result[0].data.httpStatus is not 200');
+            }
+
+            if (!response.result[0].data.hasOwnProperty('bodyObj')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIDeviceList', 'FMGAPIDeviceList response.result[0].data does not have bodyObj');
+            }
+
+            responseObj.APIDeviceList = response.result[0].data.bodyObj.result[0].data;
+            //responseObj.APIDeviceList = fmg_obj.ConvDeviceArrToVDOMPair(response.result[0].data.bodyObj.result[0].data);
+
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+
+        return fmgAppResponse.getDataString();
+    },
+    /*
+    * Get FMG Script Policy names of ADOM supplied through FMG API
+    */
+    FMGAPIPolicyPKGList: function () {
+        var currScopeName = gs.getCurrentScopeName();
+        var utilSrv = new UtilSrv();
+        var fmgAppResponse = new FMGAppResponse();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+        var responseObj = {};
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.fmg_script_read') !== true && gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIPolicyPKGList', 'Insufficient permission to access the resources');
+            }
+
+            responseObj = {
+                APIPolicyPKGList: []
+            };
+
+            // Adom
+            var adom = this.getParameter('sysparm_adom');
+            var fmg_obj = new FMGApi();
+            var response = fmg_obj.FMGApi_GetPolicyPKGList(adom);
+
+            if (typeof response !== 'object' || response === null) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIPolicyPKGList', 'FMGAPIPolicyPKGList Response is null or non object');
+            }
+
+            if (!response.hasOwnProperty('result')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIPolicyPKGList', 'FMGAPIPolicyPKGList Response is missing result property');
+            }
+
+            if (!response.result[0]) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIPolicyPKGList', 'FMGAPIPolicyPKGList response.result is empty');
+            }
+
+            if (!response.result[0].hasOwnProperty('data')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIPolicyPKGList', 'FMGAPIPolicyPKGList response.result[0] is missing data property');
+            }
+
+            if (!response.result[0].data.hasOwnProperty('httpStatus')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIPolicyPKGList', 'FMGAPIPolicyPKGList response.result[0].data is missing httpStatus property');
+            }
+
+            if (response.result[0].data.httpStatus != 200) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIPolicyPKGList', 'FMGAPIPolicyPKGList response.result[0].data.httpStatus is not 200');
+            }
+
+            if (!response.result[0].data.hasOwnProperty('bodyObj')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIPolicyPKGList', 'FMGAPIPolicyPKGList response.result[0].data does not have bodyObj');
+            }
+
+            responseObj.APIPolicyPKGList = response.result[0].data.bodyObj.result[0].data;
+
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+
+        return fmgAppResponse.getDataString();
+    },
+    /*
+    * Get FMG Script list info of ADOM supplied through FMG API
+    */
+    FMGAPIScriptListInfo: function () {
+        var currScopeName = gs.getCurrentScopeName();
+
+        var utilSrv = new UtilSrv();
+        var fmgAppResponse = new FMGAppResponse();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+        var responseObj = {};
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.fmg_script_read') !== true && gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIScriptListInfo', 'Insufficient permission to access the resources');
+            }
+
+            responseObj = {
+                APIScriptList: []
+            };
+
+            // Adom
+            var adom = this.getParameter('sysparm_adom');
+            var fmg_obj = new FMGApi();
+            var response = fmg_obj.FMGApi_GetScriptList(adom);
+
+            if (typeof response !== 'object' || response === null) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIScriptListInfo', 'FMGAPIScriptListInfo Response is null or non object');
+            }
+
+            if (!response.hasOwnProperty('result')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIScriptListInfo', 'FMGAPIScriptListInfo Response is missing result property');
+            }
+
+            if (!response.result[0]) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIScriptListInfo', 'FMGAPIScriptListInfo response.result is empty');
+            }
+
+            if (!response.result[0].hasOwnProperty('data')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIScriptListInfo', 'FMGAPIScriptListInfo response.result[0] is missing data property');
+            }
+
+            if (!response.result[0].data.hasOwnProperty('httpStatus')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIScriptListInfo', 'FMGAPIScriptListInfo response.result[0].data is missing httpStatus property');
+            }
+
+            if (response.result[0].data.httpStatus != 200) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIScriptListInfo', 'FMGAPIScriptListInfo response.result[0].data.httpStatus is not 200');
+            }
+
+            if (!response.result[0].data.hasOwnProperty('bodyObj')) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGAPIScriptListInfo', 'FMGAPIScriptListInfo response.result[0].data does not have bodyObj');
+            }
+
+            responseObj.APIScriptList = fmg_obj.FilterScriptArr(response.result[0].data.bodyObj.result[0].data, gs.getProperty(currScopeName + '.fmg.scripttplprefix'));
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+
+        return fmgAppResponse.getDataString();
+    },
+
+    IsValidFMGScriptNumber: function (str) {
+        if (!(str.length > 3)) {
+            return false;
+        }
+
+        return /^SID[0-9]+$/.test(str);
+    },
+
+    /*
+    * Create customized FMG script in SN fmg_script table
+    */
+    FMGCreateCustomizedScript: function () {
+        var currScopeName = gs.getCurrentScopeName();
+
+        var utilSrv = new UtilSrv();
+        var nodeImpSet = new NodeImpSet();
+        var node = new Node();
+        var fmgAppResponse = new FMGAppResponse();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+        var responseObj = {};
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.fmg_script_read') !== true && gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGCreateCustomizedScript', 'Insufficient permission to access the resources');
+            }
+
+            responseObj = {
+                result: '',
+            };
+
+            var convRequest_string = this.getParameter('sysparm_convRequestString');
+
+            // Encode a parameter
+            var convRequest_obj = JSON.parse(convRequest_string);
+
+            // Prevent futher update once it's submitted
+            if ('u_number' in convRequest_obj) {
+                if (this.IsValidFMGScriptNumber(convRequest_obj.u_number) !== true) {
+                    throw utilSrv.GenerateCustomizedError('', 'FMGCreateCustomizedScript', 'Invalid u_number');
+                }
+
+                var gr = node.GetRecord(currScopeName + '_fmg_script', {
+                    where: {
+                        number: convRequest_obj.u_number,
+                    }
+                });
+
+                if (gr === null) {
+                    throw utilSrv.GenerateCustomizedError('', 'FMGCreateCustomizedScript', 'Error on querying u_number');
+                }
+
+                if (gr.getValue('is_submitted') !== '0') {
+                    throw utilSrv.GenerateCustomizedError('', 'FMGCreateCustomizedScript', 'Invalid is_submitted status');
+                }
+            }
+
+            // Following properties may contain special symbols(${}), needed to be ecnoded to save to DB or else the SN ignores the value.
+            // TODO: Find out why sending special characters through CURL commands works but we have to encode here
+            if (convRequest_obj.hasOwnProperty('u_script_content')) {
+                convRequest_obj.u_script_content = gs.base64Encode(convRequest_obj.u_script_content);
+            }
+
+            if (convRequest_obj.hasOwnProperty('u_script_content_configured')) {
+                convRequest_obj.u_script_content_configured = gs.base64Encode(convRequest_obj.u_script_content_configured);
+            }
+
+            if (convRequest_obj.hasOwnProperty('u_script_conte_gured_progress')) {
+                convRequest_obj.u_script_conte_gured_progress = gs.base64Encode(convRequest_obj.u_script_conte_gured_progress);
+            }
+
+            if (convRequest_obj.hasOwnProperty('u_script_list')) {
+                convRequest_obj.u_script_list = gs.base64Encode(convRequest_obj.u_script_list);
+            }
+
+            // Send request
+            var impSetResponseObj = nodeImpSet.SendImpSetRESTRequest(convRequest_obj);
+
+            // Check if Import Set Request has issues
+            if (impSetResponseObj.result[0].status.code !== 0) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGCreateCustomizedScript', impSetResponseObj.result[0].status.message);
+            }
+
+            responseObj.result = impSetResponseObj;
+
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+
+        return fmgAppResponse.getDataString();
+    },
+
+    CancelFMGScript: function () {
+        var currScopeName = gs.getCurrentScopeName();
+        var utilSrv = new UtilSrv();
+        var fmgAppResponse = new FMGAppResponse();
+        var node = new Node();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+        var responseObj = {};
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.fmg_script_read') !== true && gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'CancelFMGScript', 'Insufficient permission to access the resources');
+            }
+
+            var number = this.getParameter('sysparm_number');
+            if (this.IsValidFMGScriptNumber(number) !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'CancelFMGScript', 'Invalid u_number');
+            }
+
+            var queryData = {
+                op: 'UPDATE',
+                set: {
+                    is_cancelled: 1,
+                },
+                where: {
+                    number: number,
+                },
+            };
+
+            if (node.Save(currScopeName + '_fmg_script', queryData) === false) {
+                throw utilSrv.GenerateCustomizedError('', 'CancelFMGScript', 'CancelFMGScript save failed');
+            }
+
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+        return fmgAppResponse.getDataString();
+    },
+
+    RetryFMGScript: function () {
+        var currScopeName = gs.getCurrentScopeName();
+
+        //
+        var utilSrv = new UtilSrv();
+        var fmgAppResponse = new FMGAppResponse();
+        var node = new Node();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+        var responseObj = {};
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.fmg_script_read') !== true && gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'RetryFMGScript', 'Insufficient permission to access the resources');
+            }
+
+            var number = this.getParameter('sysparm_number');
+            if (this.IsValidFMGScriptNumber(number) !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'RetryFMGScript', 'Invalid u_number');
+            }
+
+            var gr = node.GetRecord(currScopeName + '_fmg_script', {
+                where: {
+                    number: number,
+                },
+            });
+
+            if (gr === null) {
+                throw utilSrv.GenerateCustomizedError('', 'RetryFMGScript', 'Invalid number');
+            }
+
+            if (gr.getValue('sch_exec_script_status') !== '3') {
+                throw utilSrv.GenerateCustomizedError('', 'RetryFMGScript', 'Invalid execution status');
+            }
+
+            // Reset data
+            gr.setValue('sch_create_script_status', 0);
+            gr.setValue('sch_create_script_count', 0);
+            gr.setValue('sch_create_script_time', 0);
+
+            gr.setValue('sch_exec_script_status', 0);
+            gr.setValue('sch_exec_script_count', 0);
+            gr.setValue('sch_exec_script_time', 0);
+
+            gr.setValue('is_adom_committed', 0);
+            gr.setValue('is_cancelled', 0);
+
+            if (gr.update() === null) {
+                throw utilSrv.GenerateCustomizedError('', 'RetryFMGScript', 'Update record failed');
+            }
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+
+        return fmgAppResponse.getDataString();
+    },
+
+    /*
+    * Get all customized script list info from SN fmg_script table
+    */
+    FMGScriptList: function () {
+        var currScopeName = gs.getCurrentScopeName();
+        var utilSrv = new UtilSrv();
+        var fmgAppResponse = new FMGAppResponse();
+        var node = new Node();
+        var statusObj = fmgAppResponse.STATUS_INIT;
+        var responseObj = {};
+
+        try {
+            // Check role
+            if (gs.hasRole(currScopeName + '.fmg_script_read') !== true && gs.hasRole(currScopeName + '.fmg_script_write') !== true) {
+                throw utilSrv.GenerateCustomizedError('', 'FMGScriptList', 'Insufficient permission to access the resources');
+            }
+
+            // Adom filter
+            var adomfilter = this.getParameter('sysparm_adomfilter');
+
+            // Determine page number, start row and end row
+            var rowsPerPage = 10;
+            var pageNum = Number(this.getParameter('sysparm_pageNum'));
+            if (!(pageNum >= 0)) {
+                pageNum = 0;
+            }
+            var startRow = pageNum * rowsPerPage;
+            var endRow = startRow + rowsPerPage;
+
+            responseObj = {
+                adomList: ['All'],
+                script_write_role: 0,
+                fmgScriptArr: [],
+                fmgScriptRowCount: node.GetRowCount(currScopeName + '_fmg_script'),
+                fmgScriptRowPerPage: rowsPerPage,
+                adomSysProp: gs.getProperty(currScopeName + '.fmg.adomlist') ? JSON.parse(gs.getProperty(currScopeName + '.fmg.adomlist')) : '',
+            };
+
+            // Script write role
+            if (gs.hasRole('x_forti_fmgintgv2.fmg_script_write') === true) {
+                responseObj.script_write_role = 1;
+            }
+
+            var gr = new GlideRecordSecure(currScopeName + '_fmg_script');
+
+            // Get all availble faz incidents or filter them based on the adom filter
+            if (adomfilter === 'All' || adomfilter === null) {
+                //gr.orderBy('sys_updated_on');
+                gr.orderByDesc('sys_created_on');
+                gr.chooseWindow(startRow, endRow);
+                gr.query();
+            } else {
+                gr.get('adom', adomfilter);
+                gr.orderByDesc('sys_created_on');
+                gr.chooseWindow(startRow, endRow);
+                gr.query();
+
+                // Get number of rows retireved by the filter
+                responseObj.fmgScriptRowCount = gr.getRowCount()
+            }
+
+            while (gr.next() === true) {
+                var overall_status = this.GetOverallStatus(
+                    gr.getValue('script_type'),
+                    gr.getValue('is_submitted'),
+                    gr.getValue('sch_adom_status'),
+                    gr.getValue('sch_create_script_status'),
+                    gr.getValue('sch_exec_script_status'),
+                    gr.getValue('sch_delete_script_status'),
+                    gr.getValue('sch_check_exec_status'),
+                    gr.getValue('sch_deploy_status'),
+                    gr.getValue('sch_check_deploy_status'),
+                    gr.getValue('exec_script_status'),
+                    gr.getValue('deploy_status')
+                );
+
+                responseObj.fmgScriptArr.push({
+                    sys_id: gr.getValue('sys_id'),
+                    number: gr.getValue('number'),
+                    script_name: gr.getValue('script_name') || '',
+                    description: gr.getValue('description') || '',
+                    script_type: gr.getValue('script_type') || '',
+                    script_typeTxt: this.GetScriptTypeTxt(gr.getValue('script_type')),
+                    adom: gr.getValue('adom') || '',
+                    // Base 64 enocded value needs decode
+                    script_content: gr.getValue('script_content') ? gs.base64Decode(gr.getValue('script_content')) : '',
+                    // Base 64 enocded value needs decode
+                    script_content_configured: gr.getValue('script_content_configured') ? gs.base64Decode(gr.getValue('script_content_configured')) : '',
+                    // Base 64 enocded value needs decode
+                    script_content_configured_progress: gr.getValue('script_content_configured_progress') ? JSON.parse(gs.base64Decode(gr.getValue('script_content_configured_progress'))) : '',
+                    script_index_selected: gr.getValue('script_index_selected') || '',
+                    // Base 64 enocded value needs decode
+                    script_list: gr.getValue('script_list') ? JSON.parse(gs.base64Decode(gr.getValue('script_list'))) : '',
+                    device_list: gr.getValue('device_list') ? JSON.parse(gr.getValue('device_list')) : '',
+                    policy_package_list: gr.getValue('policy_package_list') ? JSON.parse(gr.getValue('policy_package_list')) : '',
+                    policy_package: gr.getValue('policy_package') || '',
+                    installation_device: gr.getValue('installation_device') ? JSON.parse(gr.getValue('installation_device')) : '',
+                    created: gr.getValue('sys_created_on'),
+                    updated: gr.getValue('sys_updated_on'),
+                    is_submitted: gr.getValue('is_submitted'),
+                    overall_status: overall_status,
+                    exec_script_task_id: Number(gr.getValue('exec_script_task_id')) || 0,
+                    exec_script_percent: Number(gr.getValue('exec_script_percent')) || 0,
+                    exec_script_status: this.CapitalizeFirstStr(gr.getValue('exec_script_status')) || '',
+                    exec_script_summary: this.CapitalizeFirstStr(gr.getValue('exec_script_summary')) || '',
+                    deploy_task_id: Number(gr.getValue('deploy_task_id')) || 0,
+                    deploy_percent: Number(gr.getValue('deploy_percent')) || 0,
+                    deploy_status: this.CapitalizeFirstStr(gr.getValue('deploy_status')) || '',
+                    deploy_summary: this.CapitalizeFirstStr(gr.getValue('deploy_summary')) || '',
+                    sch_exec_script_status: Number(gr.getValue('sch_exec_script_status')),
+                });
+
+            }
+
+            /* Add all admon list
+            var saved_sys_adom = gs.getProperty(currScopeName + '.fmg.fmgadomlist') ? JSON.parse(gs.getProperty(currScopeName + '.fmg.fmgadomlist')) : '';
+            if (saved_sys_adom.length) {
+                for (var i = 0; i < saved_sys_adom.length; i++) {
+                    responseObj.adomList.push(saved_sys_adom[i]);
+                }
+            }
+            */
+
+            // #0542642 Add adom which is in the change history
+            var ga = new GlideAggregate(currScopeName + '_fmg_script');
+            ga.addAggregate('adom');
+            ga.groupBy("adom");
+            ga.query();
+            while (ga.next()) {
+                responseObj.adomList.push(ga.adom.getDisplayValue());
+            }
+
+            statusObj = fmgAppResponse.STATUS_OK;
+        } catch (ex) {
+            var exObj = utilSrv.GetAndLogExceptionObj(ex);
+            statusObj = fmgAppResponse.STATUS_CUSTOM(999, exObj.message);
+        }
+
+        fmgAppResponse.setData('0', '/xmlhttp.do', statusObj, responseObj);
+
+        return fmgAppResponse.getDataString();
+    },
+    GetOverallStatus: function (script_type, is_submitted, sch_adom_status, sch_create_script_status, sch_exec_script_status, sch_delete_script_status, sch_check_exec_status, sch_deploy_status, sch_check_deploy_status, exec_script_status, deploy_status) {
+        var currScopeName = gs.getCurrentScopeName();
+
+        // adom_database and device_database script types may be deployed to FortiGate
+        // while remote_device script type does not need to be run the install command.
+        if (script_type === 'adom_database' || script_type === 'device_database') {
+            // CheckDeploy
+            if (sch_check_deploy_status === '2') {
+                return 'Installation - ' + this.CapitalizeFirstStr(deploy_status);
+            } else if (sch_check_deploy_status === '3') {
+                return 'Installation - Timeout';
+            }
+
+            // Deploy
+            if (sch_deploy_status === '2') {
+                return 'Installation - Submitted';
+            } else if (sch_deploy_status === '3') {
+                return 'Installation - Timeout';
+            } else if (sch_deploy_status === '4') {
+                return 'Installation - Cancelled';
+            }
+        }
+
+        // CheckExec
+        if (sch_check_exec_status === '2') {
+            return 'Execution - ' + this.CapitalizeFirstStr(exec_script_status);
+        } else if (sch_check_exec_status === '3') {
+            return 'Execution - Timeout';
+        }
+
+        if (gs.getProperty(currScopeName + '.fmg.isdeletescript') === '1') {
+            if (sch_delete_script_status === '3') {
+                return 'Script deletion - Timeout';
+            }
+        }
+
+        // ExecScript
+        if (sch_exec_script_status === '2') {
+            return 'Execution - Submitted';
+        } else if (sch_exec_script_status === '3') {
+            return 'Execution - Timeout';
+        } else if (sch_exec_script_status === '4') {
+            return 'Execution - Cancelled';
+        }
+
+        // CreateScript
+        if (sch_create_script_status === '2') {
+            return 'Execution - Submitted';
+        } else if (sch_create_script_status === '3') {
+            return 'Execution - Timeout';
+        } else if (sch_create_script_status === '4') {
+            return 'Execution - Cancelled';
+        }
+
+        // ADOM Locked
+        if (sch_adom_status === '2') {
+            return 'ADOM Locked';
+        } else if (sch_adom_status === '3') {
+            return 'Connecting';
+        }
+
+        if (is_submitted === '1') {
+            return 'Submitted';
+        }
+
+        return 'Draft';
+    },
+    GetScriptTypeTxt: function (scriptType) {
+        switch (scriptType) {
+            case 'adom_database':
+                return 'Policy Package';
+            case 'device_database':
+                return 'Device Database';
+            case 'remote_device':
+                return 'Direct CLI';
+        }
+
+        return '';
+    },
+    CapitalizeFirstStr: function (inputStr) {
+        if (inputStr) {
+            return inputStr.charAt(0).toUpperCase() + inputStr.slice(1);
+        }
+        return '';
+    },
+    type: 'FMGJSONRPC',
+});]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-30 01:18:55</sys_created_on>
+        <sys_id>cb84d78edb466b00310473e1ba961988</sys_id>
+        <sys_mod_count>275</sys_mod_count>
+        <sys_name>FMGJSONRPC</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_script_include_cb84d78edb466b00310473e1ba961988</sys_update_name>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2022-05-05 18:32:55</sys_updated_on>
+    </sys_script_include>
+</record_update>

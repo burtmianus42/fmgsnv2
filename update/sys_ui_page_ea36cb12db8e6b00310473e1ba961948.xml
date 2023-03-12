@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ui_page">
+    <sys_ui_page action="INSERT_OR_UPDATE">
+        <category>general</category>
+        <client_script/>
+        <description/>
+        <direct>false</direct>
+        <endpoint>x_forti_fmgintgv2_app_sys_prop.do</endpoint>
+        <html><![CDATA[<?xml version="1.0" encoding="utf-8" ?>
+<j:jelly trim="false" xmlns:j="jelly:core" xmlns:g="glide" xmlns:j2="null" xmlns:g2="null">
+
+    <!-- import style stylesheet -->
+    <link href="23aca6aedbe07f003445710439961996.cssdbx" rel="stylesheet" type="text/css">
+    </link>
+
+    <!-- import app_sys_prop stylesheet -->
+    <link href="8719fededba83f0034457104399619b7.cssdbx" rel="stylesheet" type="text/css">
+    </link>
+
+    <!-- import vue iview font -->
+    <link href="a612476fdb4df34034457104399619b8.cssdbx" rel="stylesheet" type="text/css">
+    </link>
+
+    <!-- import vue iview stylesheet -->
+    <link href="cd52c76fdb4df3403445710439961927.cssdbx" rel="stylesheet" type="text/css">
+    </link>
+
+    <!-- import vue related js -->
+    <g:requires name="${gs.getCurrentScopeName()}.vue-2.6.10.min.jsdbx" />
+
+    <!-- import iView related js -->
+    <g:requires name="${gs.getCurrentScopeName()}.vue_iview_en-3.4.1.min.jsdbx" />
+    <g:requires name="${gs.getCurrentScopeName()}.vue_iview-3.4.1.min.jsdbx" />
+
+    <!-- import js -->
+    <g:requires name="${gs.getCurrentScopeName()}.UtilCli.jsdbx" />
+    <g:requires name="${gs.getCurrentScopeName()}.FMGAppRequest.jsdbx" />
+    <g:requires name="${gs.getCurrentScopeName()}.app_sys_prop.jsdbx" />
+
+    <!-- app -->
+    <div id="app"></div>
+</j:jelly>]]></html>
+        <name>app_sys_prop</name>
+        <processing_script/>
+        <sys_class_name>sys_ui_page</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-30 18:55:58</sys_created_on>
+        <sys_id>ea36cb12db8e6b00310473e1ba961948</sys_id>
+        <sys_mod_count>12</sys_mod_count>
+        <sys_name>app_sys_prop</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_ui_page_ea36cb12db8e6b00310473e1ba961948</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-05-02 19:07:30</sys_updated_on>
+    </sys_ui_page>
+</record_update>

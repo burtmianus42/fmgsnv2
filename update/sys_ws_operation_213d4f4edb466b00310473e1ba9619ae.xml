@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ws_operation">
+    <sys_ws_operation action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <consumes>application/json,application/xml,text/xml</consumes>
+        <consumes_customized>false</consumes_customized>
+        <default_operation_uri/>
+        <enforce_acl>69dc874edb466b00310473e1ba961920</enforce_acl>
+        <http_method>GET</http_method>
+        <name>uservalid</name>
+        <operation_script><![CDATA[(function process(/*RESTAPIRequest*/ request, /*RESTAPIResponse*/ response) {
+    var response_body = {status: 0};		
+    
+  // implement resource here
+      response.setContentType('application/json');
+      response.setStatus(200);
+      response.setBody(response_body);
+      return;
+})(request, response);]]></operation_script>
+        <operation_uri>/api/x_forti_fmgintgv2/fmg/uservalid</operation_uri>
+        <produces>application/json,application/xml,text/xml</produces>
+        <produces_customized>false</produces_customized>
+        <relative_path>/uservalid</relative_path>
+        <request_example/>
+        <requires_acl_authorization>true</requires_acl_authorization>
+        <requires_authentication>true</requires_authentication>
+        <requires_snc_internal_role>true</requires_snc_internal_role>
+        <short_description/>
+        <sys_class_name>sys_ws_operation</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-30 00:47:04</sys_created_on>
+        <sys_id>213d4f4edb466b00310473e1ba9619ae</sys_id>
+        <sys_mod_count>1</sys_mod_count>
+        <sys_name>uservalid</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_ws_operation_213d4f4edb466b00310473e1ba9619ae</sys_update_name>
+        <sys_updated_by>jxiang</sys_updated_by>
+        <sys_updated_on>2018-11-30 00:47:38</sys_updated_on>
+        <web_service_definition display_value="fmg">121c8f0edb466b00310473e1ba961903</web_service_definition>
+        <web_service_version/>
+    </sys_ws_operation>
+</record_update>

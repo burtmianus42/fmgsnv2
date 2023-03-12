@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_transform_entry">
+    <sys_transform_entry action="INSERT_OR_UPDATE">
+        <choice_action>create</choice_action>
+        <coalesce>false</coalesce>
+        <coalesce_case_sensitive>false</coalesce_case_sensitive>
+        <coalesce_empty_fields>false</coalesce_empty_fields>
+        <date_format>yyyy-MM-dd HH:mm:ss</date_format>
+        <map display_value="fmg_script_stage">2ce34277db076f00310473e1ba9619cc</map>
+        <reference_value_field/>
+        <source_field>u_script_index_selected</source_field>
+        <source_script><![CDATA[answer = (function transformEntry(source) {
+
+	// Add your code here
+	return ""; // return the value to be put into the target field
+
+})(source);]]></source_script>
+        <source_table>x_forti_fmgintgv2_fmg_script_stage</source_table>
+        <sys_class_name>sys_transform_entry</sys_class_name>
+        <sys_created_by>jhsieh</sys_created_by>
+        <sys_created_on>2019-01-23 23:15:10</sys_created_on>
+        <sys_id>cdd7827bdb076f00310473e1ba961977</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>u_script_index_selected</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_transform_entry_cdd7827bdb076f00310473e1ba961977</sys_update_name>
+        <sys_updated_by>jhsieh</sys_updated_by>
+        <sys_updated_on>2019-01-23 23:15:10</sys_updated_on>
+        <target_field>script_index_selected</target_field>
+        <target_table>x_forti_fmgintgv2_fmg_script</target_table>
+        <use_source_script>false</use_source_script>
+    </sys_transform_entry>
+</record_update>

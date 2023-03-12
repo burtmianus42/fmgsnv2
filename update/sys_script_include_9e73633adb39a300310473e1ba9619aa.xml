@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>package_private</access>
+        <active>true</active>
+        <api_name>x_forti_fmgintgv2.RESTApi</api_name>
+        <caller_access/>
+        <client_callable>false</client_callable>
+        <description/>
+        <name>RESTApi</name>
+        <script><![CDATA[/* global Class */
+/**
+ * RESTApi send http request.
+ */
+var RESTApi = Class.create();
+
+RESTApi.prototype = {
+    initialize: function () {
+        // Required variables
+        this.HTTPRequestTimeoutSecond = 10;
+
+        // Reusable variables
+        this.utilSrv = new UtilSrv();
+        this.fmgAppResponse = new FMGAppResponse();
+    },
+
+    BuildRESTRequestObj: function (method, url, data, username, password) {
+        var obj = {
+            method: method,
+            url: url,
+            data: data,
+            username: '',
+            password: '',
+        };
+
+        if (username && password) {
+            obj.username = username;
+            obj.password = password;
+        }
+
+        return obj;
+    },
+
+    SendRESTRequest: function (requestObj) {
+        // RELEASE: Disable request data
+        //this.utilSrv.LogInfo('requestObj.data: ' + JSON.stringify(requestObj.data, null, 2));
+
+        var request = null;
+        var statusObj = this.fmgAppResponse.STATUS_INIT;
+        var responseObj = this.fmgAppResponse.getDefaultResponseObj();
+
+        try {
+            request = new sn_ws.RESTMessageV2();  // Might throw exception if message doesn't exist or not visible due to scope.
+
+            request.setEndpoint(requestObj.url);
+            request.setHttpMethod(requestObj.method);
+            request.setRequestHeader('Content-Type', 'application/json');
+            request.setRequestHeader('Accept', 'application/json');
+            request.setHttpTimeout(this.HTTPRequestTimeoutSecond * 1000); //In milliseconds. Wait at most 10 seconds for response from http request.
+
+            // This is for Import Set Web Services
+            if (requestObj.username && requestObj.password) {
+                request.setBasicAuth(requestObj.username, requestObj.password);
+            }
+
+            request.setRequestBody(JSON.stringify(requestObj.data));
+
+            // Might throw exception if http connection timed out or some issue with sending request itself because of encryption/decryption of password.
+			var response = request.execute();
+
+            // TODO: we should consider still responding the "body" even if it has error???
+            if (response.haveError() === true) {
+                throw new Error(response.getErrorMessage());
+            }
+
+            responseObj.httpStatus = response.getStatusCode();
+            var responseBodyObj = this.utilSrv.TryParseJSON(response.getBody());
+            if (responseBodyObj === false) {
+                throw new Error('response.getBody() contains invalid JSON string');
+            }
+
+            statusObj = this.fmgAppResponse.STATUS_OK;
+            responseObj.bodyObj = responseBodyObj;
+
+            // RELEASE: Disable response data
+            //this.utilSrv.LogInfo('responseBodyObj: ' + JSON.stringify(responseBodyObj, null, 2));
+        } catch (ex) {
+            responseObj.httpStatus = this.fmgAppResponse.getDefaultHTTPStatusWhenException();
+            this.utilSrv.GetAndLogExceptionObj(ex);
+        }
+
+        // TODO: first parameter is for ID. We haven't used it yet.
+        this.fmgAppResponse.setData('0', requestObj.url, statusObj, responseObj);
+        return this.fmgAppResponse.getData();
+    },
+    type: 'RESTApi'
+};]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-20 00:03:36</sys_created_on>
+        <sys_id>9e73633adb39a300310473e1ba9619aa</sys_id>
+        <sys_mod_count>11</sys_mod_count>
+        <sys_name>RESTApi</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_script_include_9e73633adb39a300310473e1ba9619aa</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-05-02 20:55:45</sys_updated_on>
+    </sys_script_include>
+</record_update>
