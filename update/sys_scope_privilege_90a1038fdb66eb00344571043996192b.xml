@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_scope_privilege">
+    <sys_scope_privilege action="INSERT_OR_UPDATE">
+        <operation>execute</operation>
+        <source_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</source_scope>
+        <status>allowed</status>
+        <sys_class_name>sys_scope_privilege</sys_class_name>
+        <sys_created_by>fmgjson</sys_created_by>
+        <sys_created_on>2018-12-27 23:00:53</sys_created_on>
+        <sys_id>90a1038fdb66eb00344571043996192b</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>RESTAPIRequest</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_scope_privilege_90a1038fdb66eb00344571043996192b</sys_update_name>
+        <sys_updated_by>fmgjson</sys_updated_by>
+        <sys_updated_on>2018-12-27 23:00:53</sys_updated_on>
+        <target_name>RESTAPIRequest</target_name>
+        <target_scope display_value="Global">global</target_scope>
+        <target_type>scriptable</target_type>
+    </sys_scope_privilege>
+</record_update>

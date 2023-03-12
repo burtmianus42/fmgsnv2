@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_properties">
+    <sys_properties action="INSERT_OR_UPDATE">
+        <choices/>
+        <description>Default:</description>
+        <ignore_cache>true</ignore_cache>
+        <is_private>true</is_private>
+        <name>x_forti_fmgintgv2.fmg.username</name>
+        <read_roles>x_forti_fmgintgv2.sys_prop_read,x_forti_fmgintgv2.sys_prop_write</read_roles>
+        <suffix>fmg.username</suffix>
+        <sys_class_name>sys_properties</sys_class_name>
+        <sys_created_by>jxiang</sys_created_by>
+        <sys_created_on>2018-11-19 23:31:34</sys_created_on>
+        <sys_id>daeb53f2db39a300310473e1ba961958</sys_id>
+        <sys_mod_count>22</sys_mod_count>
+        <sys_name>x_forti_fmgintgv2.fmg.username</sys_name>
+        <sys_package display_value="Security Operations FortiManager Integration V2" source="x_forti_fmgintgv2">7c729b7edbf5a300310473e1ba9619cf</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Security Operations FortiManager Integration V2">7c729b7edbf5a300310473e1ba9619cf</sys_scope>
+        <sys_update_name>sys_properties_daeb53f2db39a300310473e1ba961958</sys_update_name>
+        <sys_updated_by>fcheng</sys_updated_by>
+        <sys_updated_on>2019-05-02 21:10:04</sys_updated_on>
+        <type>string</type>
+        <value/>
+        <write_roles>x_forti_fmgintgv2.sys_prop_write</write_roles>
+    </sys_properties>
+    <sys_translated_text action="delete_multiple" query="documentkey=daeb53f2db39a300310473e1ba961958"/>
+</record_update>
